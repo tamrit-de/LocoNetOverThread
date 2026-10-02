@@ -17,6 +17,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lnot_wifi_identity.h"
 #include "mbedtls/md.h"
@@ -96,8 +97,19 @@ static char s_ap_ssid[24];
 static char s_session_token[65];
 static int64_t s_session_last_use_us;
 static int64_t s_next_login_allowed_us;
+static SemaphoreHandle_t s_state_mutex;
 
 static esp_err_t start_wifi_client_attempt(void);
+
+static void state_lock(void)
+{
+    xSemaphoreTakeRecursive(s_state_mutex, portMAX_DELAY);
+}
+
+static void state_unlock(void)
+{
+    xSemaphoreGiveRecursive(s_state_mutex);
+}
 
 static bool constant_time_equal(const uint8_t *left, const uint8_t *right, size_t length)
 {
@@ -169,13 +181,17 @@ static esp_err_t save_wifi_credentials(const char *ssid, const char *password)
         }
     }
 
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
     wifi_credentials_t credentials = {0};
     memcpy(credentials.ssid, ssid, ssid_len);
     memcpy(credentials.password, password, password_len);
 
-    nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle), TAG, "Storage unavailable");
-    esp_err_t err = nvs_set_blob(handle, WIFI_KEY, &credentials, sizeof(credentials));
+    err = nvs_set_blob(handle, WIFI_KEY, &credentials, sizeof(credentials));
     if (err == ESP_OK) {
         err = nvs_commit(handle);
     }
@@ -227,14 +243,21 @@ static esp_err_t save_admin_password(const char *password)
     }
     password_record_t record;
     esp_fill_random(record.salt, sizeof(record.salt));
-    ESP_RETURN_ON_ERROR(derive_password_hash(password, record.salt, record.hash), TAG, "Password hashing failed");
+    esp_err_t err = derive_password_hash(password, record.salt, record.hash);
+    if (err != ESP_OK) {
+        goto cleanup;
+    }
     nvs_handle_t handle;
-    ESP_RETURN_ON_ERROR(nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle), TAG, "Storage unavailable");
-    esp_err_t err = nvs_set_blob(handle, ADMIN_KEY, &record, sizeof(record));
+    err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        goto cleanup;
+    }
+    err = nvs_set_blob(handle, ADMIN_KEY, &record, sizeof(record));
     if (err == ESP_OK) {
         err = nvs_commit(handle);
     }
     nvs_close(handle);
+cleanup:
     mbedtls_platform_zeroize(&record, sizeof(record));
     if (err == ESP_OK) {
         s_admin_password_set = true;
@@ -300,7 +323,7 @@ static bool is_authenticated(httpd_req_t *request)
     value += strlen("lnot_session=");
     size_t token_len = strcspn(value, "; ");
     bool valid = token_len == strlen(s_session_token) &&
-        mbedtls_ct_memcmp(value, s_session_token, token_len) == 0;
+        constant_time_equal((const uint8_t *)value, (const uint8_t *)s_session_token, token_len);
     if (valid) {
         s_session_last_use_us = esp_timer_get_time();
     }
@@ -340,7 +363,7 @@ static const char *json_string(cJSON *json, const char *name)
     return cJSON_IsString(item) ? item->valuestring : NULL;
 }
 
-static esp_err_t api_state_handler(httpd_req_t *request)
+static esp_err_t api_state_handler_impl(httpd_req_t *request)
 {
     cJSON *state = cJSON_CreateObject();
     if (state == NULL) {
@@ -374,7 +397,7 @@ static esp_err_t api_state_handler(httpd_req_t *request)
     return err;
 }
 
-static esp_err_t page_handler(httpd_req_t *request)
+static esp_err_t page_handler_impl(httpd_req_t *request)
 {
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
@@ -385,7 +408,7 @@ static esp_err_t page_handler(httpd_req_t *request)
     return httpd_resp_sendstr(request, WEB_PAGE);
 }
 
-static esp_err_t setup_handler(httpd_req_t *request)
+static esp_err_t setup_handler_impl(httpd_req_t *request)
 {
     if (s_admin_password_set) {
         return send_error(request, "403 Forbidden", "{\"error\":\"setup disabled\"}");
@@ -402,14 +425,16 @@ static esp_err_t setup_handler(httpd_req_t *request)
     }
     cJSON_Delete(json);
     if (err != ESP_OK) {
-        return send_error(request, "400 Bad Request", "{\"error\":\"invalid password\"}");
+        return err == ESP_ERR_INVALID_ARG ?
+            send_error(request, "400 Bad Request", "{\"error\":\"invalid password\"}") :
+            send_error(request, "500 Internal Server Error", "{\"error\":\"could not save administrator password\"}");
     }
     set_session_cookie(request);
     httpd_resp_set_status(request, "204 No Content");
     return httpd_resp_send(request, NULL, 0);
 }
 
-static esp_err_t login_handler(httpd_req_t *request)
+static esp_err_t login_handler_impl(httpd_req_t *request)
 {
     if (esp_timer_get_time() < s_next_login_allowed_us) {
         return send_error(request, "429 Too Many Requests", "{\"error\":\"try again later\"}");
@@ -435,7 +460,7 @@ static esp_err_t login_handler(httpd_req_t *request)
     return httpd_resp_send(request, NULL, 0);
 }
 
-static esp_err_t logout_handler(httpd_req_t *request)
+static esp_err_t logout_handler_impl(httpd_req_t *request)
 {
     if (!is_authenticated(request)) {
         return send_error(request, "401 Unauthorized", "{\"error\":\"authentication required\"}");
@@ -446,7 +471,7 @@ static esp_err_t logout_handler(httpd_req_t *request)
     return httpd_resp_send(request, NULL, 0);
 }
 
-static esp_err_t wifi_handler(httpd_req_t *request)
+static esp_err_t wifi_handler_impl(httpd_req_t *request)
 {
     if (!is_authenticated(request)) {
         return send_error(request, "401 Unauthorized", "{\"error\":\"authentication required\"}");
@@ -489,7 +514,9 @@ static esp_err_t wifi_handler(httpd_req_t *request)
     }
     cJSON_Delete(json);
     if (err != ESP_OK) {
-        return send_error(request, "400 Bad Request", "{\"error\":\"invalid WiFi settings\"}");
+        return err == ESP_ERR_INVALID_ARG ?
+            send_error(request, "400 Bad Request", "{\"error\":\"invalid WiFi settings\"}") :
+            send_error(request, "500 Internal Server Error", "{\"error\":\"could not save WiFi settings\"}");
     }
     err = start_wifi_client_attempt();
     if (err != ESP_OK) {
@@ -499,7 +526,7 @@ static esp_err_t wifi_handler(httpd_req_t *request)
     return httpd_resp_send(request, NULL, 0);
 }
 
-static esp_err_t authenticated_handler(httpd_req_t *request)
+static esp_err_t authenticated_handler_impl(httpd_req_t *request)
 {
     if (!is_authenticated(request)) {
         return send_error(request, "401 Unauthorized", "{\"error\":\"authentication required\"}");
@@ -507,6 +534,23 @@ static esp_err_t authenticated_handler(httpd_req_t *request)
     httpd_resp_set_status(request, "404 Not Found");
     return httpd_resp_sendstr(request, "Not found");
 }
+
+#define DEFINE_LOCKED_HANDLER(name) \
+    static esp_err_t name(httpd_req_t *request) \
+    { \
+        state_lock(); \
+        esp_err_t err = name##_impl(request); \
+        state_unlock(); \
+        return err; \
+    }
+
+DEFINE_LOCKED_HANDLER(api_state_handler)
+DEFINE_LOCKED_HANDLER(page_handler)
+DEFINE_LOCKED_HANDLER(setup_handler)
+DEFINE_LOCKED_HANDLER(login_handler)
+DEFINE_LOCKED_HANDLER(logout_handler)
+DEFINE_LOCKED_HANDLER(wifi_handler)
+DEFINE_LOCKED_HANDLER(authenticated_handler)
 
 static void register_uri(const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *))
 {
@@ -528,6 +572,7 @@ static void wifi_event_handler(void *argument, esp_event_base_t event_base,
 {
     (void)argument;
     (void)event_data;
+    state_lock();
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         s_station_connected = true;
         s_station_connecting = false;
@@ -555,11 +600,19 @@ static void wifi_event_handler(void *argument, esp_event_base_t event_base,
             esp_wifi_set_mode(WIFI_MODE_AP);
         }
     }
+    state_unlock();
 }
 
 static void connect_timeout_callback(void *argument)
 {
     (void)argument;
+    if (xSemaphoreTakeRecursive(s_state_mutex, 0) != pdTRUE) {
+        esp_err_t retry_err = esp_timer_start_once(s_connect_timeout_timer, 1000);
+        if (retry_err != ESP_OK) {
+            ESP_LOGW(TAG, "Could not retry WiFi timeout handling (%s)", esp_err_to_name(retry_err));
+        }
+        return;
+    }
     if (s_station_connecting &&
         esp_timer_get_time() - s_connect_started_us >= WIFI_CONNECT_TIMEOUT_US) {
         s_station_connecting = false;
@@ -569,6 +622,7 @@ static void connect_timeout_callback(void *argument)
             ESP_LOGW(TAG, "Could not restore access point mode (%s)", esp_err_to_name(err));
         }
     }
+    state_unlock();
 }
 
 static esp_err_t start_wifi_client_attempt(void)
@@ -646,6 +700,7 @@ static void serial_console_task(void *argument)
            "admin set <password> | factory-reset\n");
     while (fgets(line, sizeof(line), stdin) != NULL) {
         line[strcspn(line, "\r\n")] = '\0';
+        state_lock();
         if (strcmp(line, "status") == 0) {
             print_status();
         } else if (strcmp(line, "wifi clear") == 0) {
@@ -682,12 +737,17 @@ static void serial_console_task(void *argument)
             puts("Unknown command. Type status, wifi set, wifi clear, admin set, or factory-reset.");
         }
         mbedtls_platform_zeroize(line, sizeof(line));
+        state_unlock();
     }
     vTaskDelete(NULL);
 }
 
 void app_main(void)
 {
+    s_state_mutex = xSemaphoreCreateRecursiveMutex();
+    if (s_state_mutex == NULL) {
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
     ESP_ERROR_CHECK(storage_init());
     ESP_ERROR_CHECK(storage_load());
 
@@ -722,9 +782,11 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(start_web_server());
 
+    state_lock();
     if (s_have_wifi_credentials) {
         ESP_ERROR_CHECK(start_wifi_client_attempt());
     }
+    state_unlock();
     xTaskCreate(serial_console_task, "serial_console", 4096, NULL, 5, NULL);
     ESP_LOGI(TAG, "Border Router ready; AP SSID: %s", s_ap_ssid);
 }
