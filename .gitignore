@@ -416,3 +416,8 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ESP-IDF generated configuration and build output
+**/build/
+**/sdkconfig
+**/sdkconfig.old
