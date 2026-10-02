@@ -1,0 +1,10 @@
+menu "LocoNet over Thread"
+
+config LNOT_HEARTBEAT_INTERVAL_SECONDS
+    int "Heartbeat interval in seconds"
+    range 1 86400
+    default 30
+    help
+        Interval used by the minimal firmware to emit a serial health message.
+
+endmenu
