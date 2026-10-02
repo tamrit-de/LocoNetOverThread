@@ -21,6 +21,7 @@
 #include "lnot_wifi_identity.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
+#include "mbedtls/platform_util.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "sdkconfig.h"
@@ -144,10 +145,10 @@ static esp_err_t storage_load(void)
         s_admin_password_set = true;
     } else if (admin_err != ESP_ERR_NVS_NOT_FOUND) {
         nvs_close(handle);
-        memset(&admin_record, 0, sizeof(admin_record));
+        mbedtls_platform_zeroize(&admin_record, sizeof(admin_record));
         return ESP_ERR_INVALID_SIZE;
     }
-    memset(&admin_record, 0, sizeof(admin_record));
+    mbedtls_platform_zeroize(&admin_record, sizeof(admin_record));
     nvs_close(handle);
     return err == ESP_ERR_NVS_NOT_FOUND ? ESP_OK : err;
 }
@@ -183,7 +184,7 @@ static esp_err_t save_wifi_credentials(const char *ssid, const char *password)
         s_wifi_credentials = credentials;
         s_have_wifi_credentials = true;
     }
-    memset(&credentials, 0, sizeof(credentials));
+    mbedtls_platform_zeroize(&credentials, sizeof(credentials));
     return err;
 }
 
@@ -200,7 +201,7 @@ static esp_err_t clear_wifi_credentials(void)
     }
     nvs_close(handle);
     if (err == ESP_OK) {
-        memset(&s_wifi_credentials, 0, sizeof(s_wifi_credentials));
+        mbedtls_platform_zeroize(&s_wifi_credentials, sizeof(s_wifi_credentials));
         s_have_wifi_credentials = false;
         s_station_connecting = false;
         s_station_connected = false;
@@ -234,7 +235,7 @@ static esp_err_t save_admin_password(const char *password)
         err = nvs_commit(handle);
     }
     nvs_close(handle);
-    memset(&record, 0, sizeof(record));
+    mbedtls_platform_zeroize(&record, sizeof(record));
     if (err == ESP_OK) {
         s_admin_password_set = true;
     }
@@ -257,8 +258,8 @@ static bool verify_admin_password(const char *password)
     uint8_t candidate[PASSWORD_HASH_SIZE];
     bool valid = derive_password_hash(password, record.salt, candidate) == ESP_OK &&
         constant_time_equal(candidate, record.hash, sizeof(candidate));
-    memset(&record, 0, sizeof(record));
-    memset(candidate, 0, sizeof(candidate));
+    mbedtls_platform_zeroize(&record, sizeof(record));
+    mbedtls_platform_zeroize(candidate, sizeof(candidate));
     return valid;
 }
 
@@ -274,7 +275,7 @@ static void set_session_cookie(httpd_req_t *request)
     snprintf(cookie, sizeof(cookie), "lnot_session=%s; HttpOnly; SameSite=Strict; Path=/",
              s_session_token);
     httpd_resp_set_hdr(request, "Set-Cookie", cookie);
-    memset(random, 0, sizeof(random));
+    mbedtls_platform_zeroize(random, sizeof(random));
 }
 
 static bool is_authenticated(httpd_req_t *request)
@@ -329,7 +330,7 @@ static esp_err_t read_json(httpd_req_t *request, cJSON **json)
     }
     body[received] = '\0';
     *json = cJSON_Parse(body);
-    memset(body, 0, received);
+    mbedtls_platform_zeroize(body, received);
     return *json == NULL ? ESP_ERR_INVALID_ARG : ESP_OK;
 }
 
@@ -397,7 +398,7 @@ static esp_err_t setup_handler(httpd_req_t *request)
     esp_err_t err = password == NULL ? ESP_ERR_INVALID_ARG : save_admin_password(password);
     cJSON *password_item = cJSON_GetObjectItemCaseSensitive(json, "password");
     if (cJSON_IsString(password_item)) {
-        memset(password_item->valuestring, 0, strlen(password_item->valuestring));
+        mbedtls_platform_zeroize(password_item->valuestring, strlen(password_item->valuestring));
     }
     cJSON_Delete(json);
     if (err != ESP_OK) {
@@ -421,7 +422,7 @@ static esp_err_t login_handler(httpd_req_t *request)
     bool valid = password != NULL && verify_admin_password(password);
     cJSON *password_item = cJSON_GetObjectItemCaseSensitive(json, "password");
     if (cJSON_IsString(password_item)) {
-        memset(password_item->valuestring, 0, strlen(password_item->valuestring));
+        mbedtls_platform_zeroize(password_item->valuestring, strlen(password_item->valuestring));
     }
     cJSON_Delete(json);
     if (!valid) {
@@ -484,7 +485,7 @@ static esp_err_t wifi_handler(httpd_req_t *request)
         ESP_ERR_INVALID_ARG : save_wifi_credentials(ssid, password);
     cJSON *password_item = cJSON_GetObjectItemCaseSensitive(json, "password");
     if (cJSON_IsString(password_item)) {
-        memset(password_item->valuestring, 0, strlen(password_item->valuestring));
+        mbedtls_platform_zeroize(password_item->valuestring, strlen(password_item->valuestring));
     }
     cJSON_Delete(json);
     if (err != ESP_OK) {
@@ -587,7 +588,7 @@ static esp_err_t start_wifi_client_attempt(void)
     station.sta.threshold.authmode = s_wifi_credentials.password[0] == '\0' ?
         WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &station);
-    memset(&station, 0, sizeof(station));
+    mbedtls_platform_zeroize(&station, sizeof(station));
     if (err != ESP_OK) {
         return err;
     }
@@ -680,7 +681,7 @@ static void serial_console_task(void *argument)
         } else if (line[0] != '\0') {
             puts("Unknown command. Type status, wifi set, wifi clear, admin set, or factory-reset.");
         }
-        memset(line, 0, sizeof(line));
+        mbedtls_platform_zeroize(line, sizeof(line));
     }
     vTaskDelete(NULL);
 }
