@@ -51,6 +51,46 @@ idf.py -C apps/border-router set-target esp32c6
 idf.py -C apps/border-router build
 ```
 
+## Border-Router-WLAN und WebUI
+
+Der Border Router startet zunächst einen offenen Access Point `LocoNet-<letzte 8
+Hex-Zeichen der Geräte-MAC>` (zum Beispiel `LocoNet-A1B2C3D4`). Die WebUI ist
+unter `http://192.168.4.1/` erreichbar. Beim ersten Aufruf muss zuerst ein
+Administratorpasswort mit mindestens 12 Zeichen gesetzt werden. Dieses
+Passwort wird mit PBKDF2-HMAC-SHA256 und individuellem Salt gespeichert.
+Anschließend sind WebUI und Konfigurationsendpunkte nur nach Anmeldung
+zugänglich.
+
+Nach dem Speichern von WLAN-Zugangsdaten bleibt der Access Point während eines
+Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg wechselt
+das Gerät in den WLAN-Client-Modus; andernfalls wird der Access Point
+wiederhergestellt. Zugangsdaten können in der WebUI geändert oder gelöscht
+werden. Die SSID darf 1–32 Zeichen enthalten. Für ein geschütztes WLAN werden
+8–63 Zeichen akzeptiert; ein leeres Passwort konfiguriert ein offenes WLAN.
+WLAN-Zugangsdaten werden nicht in Antworten oder Diagnosemeldungen ausgegeben.
+Die Border-Router-Konfiguration verwendet NVS-Verschlüsselung; die
+NVS-Schlüsselpartition ist für Flash-Verschlüsselung markiert. Für den
+produktiven Geräteeinsatz muss Flash-Verschlüsselung bei der Geräteprovisionierung
+aktiviert werden.
+
+Dieselben Vorgänge sind über die serielle Konsole möglich:
+
+- `status` zeigt Betriebsmodus und ob Zugangsdaten vorhanden sind.
+- `wifi set <SSID><TAB><Passwort>` speichert WLAN-Zugangsdaten und startet
+  einen Verbindungsversuch. Für ein offenes WLAN bleibt das Passwort leer.
+- `wifi clear` löscht die WLAN-Zugangsdaten und aktiviert den Access Point.
+- `admin set <Passwort>` setzt oder ersetzt das WebUI-Administratorpasswort
+  (12–128 Zeichen).
+- `factory-reset` löscht die gespeicherte WLAN-Konfiguration und das
+  Administratorpasswort und startet das Gerät neu. Der Befehl benötigt Zugriff
+  auf die physische serielle Konsole; danach beginnt die Einrichtung erneut.
+
+Die serielle Konsole erwartet beim Befehl `wifi set` einen Tabulator zwischen
+SSID und Passwort. Zugangsdaten nicht in Terminalmitschnitten speichern. Die
+WebUI nutzt HTTP und sollte nur in einem vertrauenswürdigen lokalen Netzwerk
+verwendet werden; sie bietet keinen Fernzugriffsschutz für nicht vertrauenswürdige
+Netze.
+
 Die gemeinsame Komponente besitzt einen portablen Host-Unit-Test. Er prüft dieselbe C-Implementierung, die auch von ESP-IDF eingebunden wird:
 
 ```powershell
