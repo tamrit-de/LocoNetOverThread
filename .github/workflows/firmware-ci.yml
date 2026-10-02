@@ -25,9 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - application: client-h2
+          - application: client
             target: esp32h2
-          - application: border-router-c6
+          - application: border-router
             target: esp32c6
     steps:
       - uses: actions/checkout@v4
