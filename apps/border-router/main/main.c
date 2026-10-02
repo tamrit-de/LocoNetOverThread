@@ -1,5 +1,6 @@
-#include <stdbool.h>
 #include <ctype.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,6 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
-#include "esp_partition.h"
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -19,7 +19,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lnot_wifi_identity.h"
-#include "mbedtls/constant_time.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
 #include "nvs.h"
@@ -58,16 +57,17 @@ static const char *const WEB_PAGE =
     "e.preventDefault();await req('/api/login','POST',{password:e.target[0].value});init()};return}"
     "let w=await req('/api/wifi');root.innerHTML='<p id=\"mode\"></p><p id=\"address\"></p>"
     "<p id=\"current\"></p>"
-    "</p><form id=\"wifi\"><input name=\"ssid\" maxlength=\"32\" required placeholder=\"WiFi SSID\">"
+    "<form id=\"wifi\"><input name=\"ssid\" maxlength=\"32\" required placeholder=\"WiFi SSID\">"
     "<input name=\"password\" type=\"password\" maxlength=\"64\" placeholder=\"WiFi password\">"
     "<button>Save WiFi</button></form>"
-    "</p><button id=\"clear\">Clear WiFi credentials</button> "
+    "<button id=\"clear\">Clear WiFi credentials</button> "
     "<button id=\"logout\">Log out</button>';document.querySelector('#wifi').onsubmit=async e=>{"
     "e.preventDefault();await req('/api/wifi','POST',{ssid:e.target.ssid.value,"
     "password:e.target.password.value});alert('Saved. Trying the new network.');init()};"
     "document.querySelector('#mode').textContent='Mode: '+s.mode;"
     "document.querySelector('#address').textContent='Address: '+s.ip;"
-    "document.querySelector('#current').textContent='Configured SSID: '+(w.configured?w.ssid:'none');"
+    "document.querySelector('#current').textContent='WiFi credentials: '+"
+    "(w.configured?'configured':'not configured');"
     "document.querySelector('#clear').onclick=async()=>{await req('/api/wifi','DELETE');init()};"
     "document.querySelector('#logout').onclick=async()=>{await req('/api/logout','POST',{});init()}}"
     "init().catch(e=>{root.textContent=e.message})</script></html>";
@@ -98,37 +98,32 @@ static int64_t s_next_login_allowed_us;
 
 static esp_err_t start_wifi_client_attempt(void);
 
+static bool constant_time_equal(const uint8_t *left, const uint8_t *right, size_t length)
+{
+    volatile uint8_t difference = 0;
+    for (size_t i = 0; i < length; ++i) {
+        difference |= left[i] ^ right[i];
+    }
+    return difference == 0;
+}
+
 static esp_err_t storage_init(void)
 {
-#if CONFIG_NVS_ENCRYPTION
-    const esp_partition_t *keys = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS_KEYS, NULL);
-    if (keys == NULL) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    nvs_sec_cfg_t security_config;
-    esp_err_t err = nvs_flash_read_security_cfg(keys, &security_config);
-    if (err == ESP_ERR_NVS_KEYS_NOT_INITIALIZED) {
-        err = nvs_flash_generate_keys(keys, &security_config);
-    }
-    if (err != ESP_OK) {
-        return err;
-    }
-    return nvs_flash_secure_init(&security_config);
-#else
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_RETURN_ON_ERROR(nvs_flash_erase(), TAG, "Could not initialize configuration storage");
         err = nvs_flash_init();
     }
     return err;
-#endif
 }
 
 static esp_err_t storage_load(void)
 {
     nvs_handle_t handle;
     esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return ESP_OK;
+    }
     if (err != ESP_OK) {
         return err;
     }
@@ -218,19 +213,9 @@ static esp_err_t derive_password_hash(
     const char *password, const uint8_t salt[PASSWORD_SALT_SIZE],
     uint8_t hash[PASSWORD_HASH_SIZE])
 {
-    mbedtls_md_context_t md;
-    const mbedtls_md_info_t *info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    if (info == NULL) {
-        return ESP_FAIL;
-    }
-    mbedtls_md_init(&md);
-    int result = mbedtls_md_setup(&md, info, 1);
-    if (result == 0) {
-        result = mbedtls_pkcs5_pbkdf2_hmac(
-            &md, (const unsigned char *)password, strlen(password), salt,
-            PASSWORD_SALT_SIZE, PASSWORD_ITERATIONS, PASSWORD_HASH_SIZE, hash);
-    }
-    mbedtls_md_free(&md);
+    int result = mbedtls_pkcs5_pbkdf2_hmac_ext(
+        MBEDTLS_MD_SHA256, (const unsigned char *)password, strlen(password), salt,
+        PASSWORD_SALT_SIZE, PASSWORD_ITERATIONS, PASSWORD_HASH_SIZE, hash);
     return result == 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -271,7 +256,7 @@ static bool verify_admin_password(const char *password)
     }
     uint8_t candidate[PASSWORD_HASH_SIZE];
     bool valid = derive_password_hash(password, record.salt, candidate) == ESP_OK &&
-        mbedtls_ct_memcmp(candidate, record.hash, sizeof(candidate)) == 0;
+        constant_time_equal(candidate, record.hash, sizeof(candidate));
     memset(&record, 0, sizeof(record));
     memset(candidate, 0, sizeof(candidate));
     return valid;
@@ -330,7 +315,7 @@ static esp_err_t send_error(httpd_req_t *request, const char *status, const char
 
 static esp_err_t read_json(httpd_req_t *request, cJSON **json)
 {
-    if (request->content_len <= 0 || request->content_len > HTTP_BODY_LIMIT) {
+    if (request->content_len == 0 || request->content_len > HTTP_BODY_LIMIT) {
         return ESP_ERR_INVALID_SIZE;
     }
     char body[HTTP_BODY_LIMIT + 1];
@@ -382,6 +367,7 @@ static esp_err_t api_state_handler(httpd_req_t *request)
         return ESP_FAIL;
     }
     httpd_resp_set_type(request, "application/json");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     esp_err_t err = httpd_resp_sendstr(request, encoded);
     free(encoded);
     return err;
@@ -470,9 +456,6 @@ static esp_err_t wifi_handler(httpd_req_t *request)
             return ESP_FAIL;
         }
         cJSON_AddBoolToObject(state, "configured", s_have_wifi_credentials);
-        if (s_have_wifi_credentials) {
-            cJSON_AddStringToObject(state, "ssid", s_wifi_credentials.ssid);
-        }
         char *encoded = cJSON_PrintUnformatted(state);
         cJSON_Delete(state);
         if (encoded == NULL) {
@@ -558,6 +541,18 @@ static void wifi_event_handler(void *argument, esp_event_base_t event_base,
             s_station_connected = false;
             ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
         }
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED &&
+               s_station_connected) {
+        s_station_connected = false;
+        s_station_connecting = true;
+        s_connect_started_us = esp_timer_get_time();
+        if (esp_wifi_set_mode(WIFI_MODE_APSTA) == ESP_OK &&
+            esp_timer_start_once(s_connect_timeout_timer, WIFI_CONNECT_TIMEOUT_US) == ESP_OK) {
+            esp_wifi_connect();
+        } else {
+            s_station_connecting = false;
+            esp_wifi_set_mode(WIFI_MODE_AP);
+        }
     }
 }
 
@@ -580,26 +575,24 @@ static esp_err_t start_wifi_client_attempt(void)
     if (!s_have_wifi_credentials) {
         return ESP_ERR_INVALID_STATE;
     }
+    s_station_connecting = false;
+    s_station_connected = false;
+    (void)esp_timer_stop(s_connect_timeout_timer);
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "Could not enable WiFi client");
+    (void)esp_wifi_disconnect();
+
     wifi_config_t station = {0};
     memcpy(station.sta.ssid, s_wifi_credentials.ssid, strlen(s_wifi_credentials.ssid));
     memcpy(station.sta.password, s_wifi_credentials.password, strlen(s_wifi_credentials.password));
     station.sta.threshold.authmode = s_wifi_credentials.password[0] == '\0' ?
         WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
-    s_station_connected = false;
-    s_station_connecting = true;
-    s_connect_started_us = esp_timer_get_time();
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &station);
     memset(&station, 0, sizeof(station));
     if (err != ESP_OK) {
-        s_station_connecting = false;
         return err;
     }
-    err = esp_wifi_set_mode(WIFI_MODE_APSTA);
-    if (err != ESP_OK) {
-        s_station_connecting = false;
-        return err;
-    }
-    (void)esp_timer_stop(s_connect_timeout_timer);
+    s_station_connecting = true;
+    s_connect_started_us = esp_timer_get_time();
     err = esp_timer_start_once(s_connect_timeout_timer, WIFI_CONNECT_TIMEOUT_US);
     if (err != ESP_OK) {
         s_station_connecting = false;
@@ -631,8 +624,16 @@ static void print_status(void)
 {
     const char *mode = s_station_connected ? "WiFi client" :
         s_station_connecting ? "AP + WiFi client connection attempt" : "Access point";
-    printf("Mode: %s; AP SSID: %s; WiFi credentials: %s; administrator password: %s\n",
-           mode, s_ap_ssid, s_have_wifi_credentials ? "configured" : "not configured",
+    char address[16] = "192.168.4.1";
+    if (s_station_connected) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(s_station_netif, &ip_info) == ESP_OK) {
+            snprintf(address, sizeof(address), IPSTR, IP2STR(&ip_info.ip));
+        }
+    }
+    printf("Mode: %s; WebUI: http://%s/; AP SSID: %s; WiFi credentials: %s; "
+           "administrator password: %s\n", mode, address, s_ap_ssid,
+           s_have_wifi_credentials ? "configured" : "not configured",
            s_admin_password_set ? "configured" : "not configured");
 }
 
@@ -700,6 +701,7 @@ void app_main(void)
     }
     wifi_init_config_t wifi_init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_init));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL));
     const esp_timer_create_args_t timeout_args = {

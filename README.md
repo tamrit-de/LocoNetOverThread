@@ -66,12 +66,14 @@ Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg wechselt
 das Gerät in den WLAN-Client-Modus; andernfalls wird der Access Point
 wiederhergestellt. Zugangsdaten können in der WebUI geändert oder gelöscht
 werden. Die SSID darf 1–32 Zeichen enthalten. Für ein geschütztes WLAN werden
-8–63 Zeichen akzeptiert; ein leeres Passwort konfiguriert ein offenes WLAN.
+8–63 Zeichen oder ein 64-stelliger Hex-PSK akzeptiert; ein leeres Passwort
+konfiguriert ein offenes WLAN.
 WLAN-Zugangsdaten werden nicht in Antworten oder Diagnosemeldungen ausgegeben.
-Die Border-Router-Konfiguration verwendet NVS-Verschlüsselung; die
-NVS-Schlüsselpartition ist für Flash-Verschlüsselung markiert. Für den
-produktiven Geräteeinsatz muss Flash-Verschlüsselung bei der Geräteprovisionierung
-aktiviert werden.
+Die Border-Router-Konfiguration verwendet NVS-Verschlüsselung mit einem
+HMAC-Schlüssel in eFuse. Beim ersten Start wird dafür eFuse-Schlüsselblock 0
+irreversibel belegt; vor dem Flashen ist sicherzustellen, dass dieser
+Schlüsselblock nicht anderweitig verwendet wird. Ein Werksreset löscht
+Konfigurationen, aber nicht diesen gerätespezifischen eFuse-Schlüssel.
 
 Dieselben Vorgänge sind über die serielle Konsole möglich:
 
