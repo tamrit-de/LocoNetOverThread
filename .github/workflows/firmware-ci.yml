@@ -1,4 +1,4 @@
-name: Firmware CI
+name: Firmware CI and hardware deployment
 
 on:
   pull_request:
@@ -53,6 +53,11 @@ jobs:
     needs: [host-tests, build]
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, "${{ matrix.runner }}"]
+    environment:
+      name: hardware-${{ matrix.application }}
+    concurrency:
+      group: hardware-${{ matrix.application }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -72,16 +77,39 @@ jobs:
         with:
           name: firmware-${{ matrix.application }}-${{ matrix.target }}
           path: apps/${{ matrix.application }}
+      - name: Verify assigned serial adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ESPPORT:-}"
+          test -c "$ESPPORT"
+          echo "Using serial device: $ESPPORT"
+      - name: Install Docker when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo --non-interactive apt-get update
+            sudo --non-interactive apt-get install --yes docker.io
+          fi
+          sudo --non-interactive systemctl enable --now docker
+          sudo --non-interactive docker version
       - name: Flash and verify firmware
-        uses: espressif/esp-idf-ci-action@v1
-        with:
-          esp_idf_version: v5.3.2
-          target: ${{ matrix.target }}
-          path: apps/${{ matrix.application }}
-          extra_docker_args: --privileged -v /dev:/dev
-          command: |
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo --non-interactive docker run --rm --tty \
+            --device="$ESPPORT" \
+            --env "ESPPORT=$ESPPORT" \
+            --env "IDF_TARGET=${{ matrix.target }}" \
+            --volume "$GITHUB_WORKSPACE:/app/$GITHUB_REPOSITORY" \
+            --workdir "/app/$GITHUB_REPOSITORY/apps/${{ matrix.application }}" \
+            espressif/idf:v5.3.2 \
+            /bin/bash -c '
+            git config --global --add safe.directory "*"
             status=0
             timeout --signal=INT --kill-after=5s 120s idf.py flash monitor > /tmp/lnot-deploy-monitor.log 2>&1 || status=$?
             cat /tmp/lnot-deploy-monitor.log
             test "$status" -eq 124
             grep -Fq "${{ matrix.verify }}" /tmp/lnot-deploy-monitor.log
+            '

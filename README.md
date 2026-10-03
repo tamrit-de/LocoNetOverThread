@@ -105,9 +105,11 @@ Falls der Compiler nicht als `cc` im `PATH` verfügbar ist, kann er über `CC` a
 
 Der GitHub-Actions-Workflow baut die aktuellen ESP32-H2- und ESP32-C6-Ziele mit ESP-IDF v5.3.2 und führt den Host-Unit-Test bei Pull Requests sowie Änderungen an `main` aus. Für jeden Build wird ein Firmware-Artefakt 14 Tage bereitgestellt.
 
-Nach erfolgreichen Tests werden bei Änderungen an `main` (oder manuell per `workflow_dispatch` auf `main`) die Images auf den Self-hosted Runnern bereitgestellt: `apps/client` auf `ESP32-H2`, `apps/border-router` auf `ESP32-C6`. Die Runner benötigen Docker mit Zugriff auf das angeschlossene USB-Seriell-Gerät (`/dev`); ESP-IDF und `idf.py` werden im Container `espressif/idf:v5.3.2` ausgeführt. Nach dem Flashen überwacht der Workflow die serielle Ausgabe und verlangt die jeweilige Firmware-Ready-Meldung.
+Nach erfolgreichen Tests werden bei Änderungen an `main` (oder manuell per `workflow_dispatch` auf `main`) die Images auf den zugeordneten Self-hosted Runnern bereitgestellt: `apps/client` auf `ESP32-H2`, `apps/border-router` auf `ESP32-C6`. Die Deployments werden je Hardwareziel serialisiert und verwenden ausschließlich den dem Runner zugewiesenen seriellen Adapter. GitHub-Environments können vor dem Flashen eine Freigabe verlangen. Der Deployment-Job installiert Docker bei Bedarf und führt ESP-IDF sowie `idf.py` im Container `espressif/idf:v5.3.2` aus. Nach dem Flashen überwacht der Workflow die serielle Ausgabe und verlangt die jeweilige Firmware-Ready-Meldung.
 
 Diese Prüfung bestätigt derzeit nur den Start der vorhandenen Minimal-Firmware. Thread-Netzwerkaufbau und Kommunikation zwischen Border Router und Client sind noch nicht implementiert und können daher noch nicht als Hardware-in-the-loop-Test verifiziert werden.
+
+Die Einrichtung der Hardware-Runner und der dafür vorgesehenen Proxmox-LXC-Container ist in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) beschrieben.
 
 ## Nächste fachliche Schritte
 
