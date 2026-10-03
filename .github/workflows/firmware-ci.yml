@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,3 +38,50 @@ jobs:
           esp_idf_version: v5.3.2
           target: ${{ matrix.target }}
           path: apps/${{ matrix.application }}
+      - name: Upload firmware build
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: firmware-${{ matrix.application }}-${{ matrix.target }}
+          path: |
+            apps/${{ matrix.application }}/build/
+            apps/${{ matrix.application }}/sdkconfig
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: Deploy ${{ matrix.application }} (${{ matrix.target }})
+    needs: [host-tests, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - application: client
+            target: esp32h2
+            runner: ESP32-H2
+            verify: "client firmware is running"
+          - application: border-router
+            target: esp32c6
+            runner: ESP32-C6
+            verify: "Border Router ready; AP SSID:"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download firmware build
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: firmware-${{ matrix.application }}-${{ matrix.target }}
+          path: apps/${{ matrix.application }}
+      - name: Flash and verify firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3.2
+          target: ${{ matrix.target }}
+          path: apps/${{ matrix.application }}
+          extra_docker_args: --privileged -v /dev:/dev
+          command: |
+            status=0
+            timeout --signal=INT --kill-after=5s 45s idf.py flash monitor > /tmp/lnot-deploy-monitor.log 2>&1 || status=$?
+            cat /tmp/lnot-deploy-monitor.log
+            test "$status" -eq 124
+            grep -Fq "${{ matrix.verify }}" /tmp/lnot-deploy-monitor.log
