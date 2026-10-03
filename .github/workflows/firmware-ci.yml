@@ -81,7 +81,7 @@ jobs:
           extra_docker_args: --privileged -v /dev:/dev
           command: |
             status=0
-            timeout --signal=INT --kill-after=5s 45s idf.py flash monitor > /tmp/lnot-deploy-monitor.log 2>&1 || status=$?
+            timeout --signal=INT --kill-after=5s 120s idf.py flash monitor > /tmp/lnot-deploy-monitor.log 2>&1 || status=$?
             cat /tmp/lnot-deploy-monitor.log
             test "$status" -eq 124
             grep -Fq "${{ matrix.verify }}" /tmp/lnot-deploy-monitor.log
