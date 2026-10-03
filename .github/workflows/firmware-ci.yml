@@ -58,6 +58,8 @@ jobs:
     concurrency:
       group: hardware-${{ matrix.application }}
       cancel-in-progress: false
+    env:
+      ESPPORT: /dev/lnot-board
     strategy:
       fail-fast: false
       matrix:
@@ -81,8 +83,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${ESPPORT:-}"
-          test -c "$ESPPORT"
+          if ! test -c "$ESPPORT"; then
+            echo "::error::Serial device $ESPPORT is unavailable. Check the LXC USB bind mount and restart the container after reconnecting the board."
+            exit 1
+          fi
           echo "Using serial device: $ESPPORT"
       - name: Install Docker when needed
         shell: bash

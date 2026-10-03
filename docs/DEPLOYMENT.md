@@ -89,21 +89,11 @@ chmod 440 /etc/sudoers.d/github-runner-lnot-deploy
 visudo --check --file=/etc/sudoers.d/github-runner-lnot-deploy
 ```
 
-Legen Sie in der Runner-Installation (`/home/github-runner/actions-runner` im
-Beispiel) die Datei `.env` mit dem durchgereichten Port an und starten Sie den
-Runner-Dienst danach neu:
-
-```bash
-printf '%s\n' 'ESPPORT=/dev/lnot-board' \
-  >/home/github-runner/actions-runner/.env
-cd /home/github-runner/actions-runner
-./svc.sh stop
-./svc.sh start
-```
-
-Die Datei `.env` wird beim Start des Runner-Prozesses gelesen und stellt
-`ESPPORT` jedem Job auf diesem Runner bereit. Der Workflow bricht vor dem
-Flashen ab, wenn die Variable fehlt oder kein Zeichengerät bezeichnet.
+Der Workflow verwendet fest `/dev/lnot-board`, den Zielpfad des oben
+konfigurierten Bind-Mounts. Es ist daher keine Runner-Umgebungsvariable und
+kein Neustart des Runner-Dienstes erforderlich. Der Workflow bricht vor dem
+Flashen mit einer konkreten Fehlermeldung ab, wenn dieser Pfad kein
+Zeichengerät bezeichnet.
 
 > **Sicherheitsgrenze:** Docker-Zugriff und die erlaubten `sudo`-Befehle sind
 > im LXC effektiv Root-Rechte. Beschränken Sie den Zugriff auf diese
@@ -118,8 +108,7 @@ Docker-Zugriff:
 
 ```bash
 su - github-runner
-cd ~/actions-runner
-set -a; . ./.env; set +a
+ESPPORT=/dev/lnot-board
 test -c "$ESPPORT"
 sudo --non-interactive docker run --rm --device="$ESPPORT" -e "ESPPORT=$ESPPORT" espressif/idf:v5.3.2 \
   bash -c 'test -c "$ESPPORT"'
