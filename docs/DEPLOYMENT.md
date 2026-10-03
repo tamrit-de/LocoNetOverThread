@@ -38,10 +38,15 @@ den exklusiv durchgereichten USB-Adapter an den ESP-IDF-Container weitergibt.
 Der Container darf keine anderen nicht benötigten Host-Geräte erhalten.
 
 Erstellen Sie den Container im Proxmox-Webinterface mit **Unprivileged
-container** deaktiviert. Ergänzen Sie anschließend auf dem Proxmox-Host in
-`/etc/pve/lxc/<CTID>.conf` die folgenden Einstellungen. Ersetzen Sie den
-Pfad nach `/dev/serial/by-id/` durch den eindeutigen Pfad des angeschlossenen
-Boards aus `ls -l /dev/serial/by-id/`.
+container** deaktiviert. Das im Proxmox-Webinterface unter **Resources**
+hinzugefügte Gerät (`dev0`) mit seinem eindeutigen
+`/dev/serial/by-id/...`-Pfad ist ausreichend und entspricht der bestehenden
+Runner-Konfiguration. Der Workflow erkennt dieses Gerät automatisch.
+
+Alternativ kann die Konfiguration direkt auf dem Proxmox-Host in
+`/etc/pve/lxc/<CTID>.conf` ergänzt werden. Ersetzen Sie den Pfad nach
+`/dev/serial/by-id/` durch den eindeutigen Pfad des angeschlossenen Boards
+aus `ls -l /dev/serial/by-id/`.
 
 ```ini
 unprivileged: 0
@@ -53,19 +58,18 @@ lxc.mount.entry: /dev/serial/by-id/<eindeutiger-board-pfad> dev/lnot-board none 
 ```
 
 Für Adapter, die auf dem Host als `/dev/ttyUSB*` erscheinen, verwenden Sie
-stattdessen `lxc.cgroup2.devices.allow: c 188:* rwm`. Der Bind-Mount gibt das
-Gerät im Container als `/dev/lnot-board` frei, sodass der flüchtige
-`ttyACM`-/`ttyUSB`-Name nicht in der Runner-Konfiguration verwendet wird.
-Starten Sie den Container nach einer Änderung mit `pct restart <CTID>` neu.
-Wird ein Board getrennt oder ausgetauscht, prüfen Sie den `by-id`-Pfad und
-starten Sie den Container erneut, damit der Bind-Mount auf das aktuelle Gerät
-zeigt.
+stattdessen `lxc.cgroup2.devices.allow: c 188:* rwm`. Starten Sie den
+Container nach einer Änderung mit `pct restart <CTID>` neu. Wird ein Board
+getrennt oder ausgetauscht, prüfen Sie den `by-id`-Pfad und starten Sie den
+Container erneut, damit der Bind-Mount auf das aktuelle Gerät zeigt.
 
-Im gestarteten Container muss nur dieses Gerät sichtbar und als Zeichengerät
-erkennbar sein:
+Im gestarteten Container muss genau ein serielles Gerät sichtbar und als
+Zeichengerät erkennbar sein. Der Workflow unterstützt `/dev/lnot-board`,
+Einträge unter `/dev/serial/by-id/`, `/dev/ttyACM*` und `/dev/ttyUSB*`:
 
 ```bash
-test -c /dev/lnot-board
+find -L /dev/serial/by-id /dev -maxdepth 1 -type c \
+  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) -print 2>/dev/null
 ```
 
 ## Bestehende Runner für Deployment vorbereiten
@@ -89,11 +93,11 @@ chmod 440 /etc/sudoers.d/github-runner-lnot-deploy
 visudo --check --file=/etc/sudoers.d/github-runner-lnot-deploy
 ```
 
-Der Workflow verwendet fest `/dev/lnot-board`, den Zielpfad des oben
-konfigurierten Bind-Mounts. Es ist daher keine Runner-Umgebungsvariable und
+Der Workflow erkennt genau einen seriellen Adapter automatisch und setzt
+`ESPPORT` nur für diesen Lauf. Es ist daher keine Runner-Umgebungsvariable und
 kein Neustart des Runner-Dienstes erforderlich. Der Workflow bricht vor dem
-Flashen mit einer konkreten Fehlermeldung ab, wenn dieser Pfad kein
-Zeichengerät bezeichnet.
+Flashen mit einer konkreten Fehlermeldung ab, wenn kein oder mehr als ein
+passendes Gerät sichtbar ist.
 
 > **Sicherheitsgrenze:** Docker-Zugriff und die erlaubten `sudo`-Befehle sind
 > im LXC effektiv Root-Rechte. Beschränken Sie den Zugriff auf diese
@@ -108,10 +112,8 @@ Docker-Zugriff:
 
 ```bash
 su - github-runner
-ESPPORT=/dev/lnot-board
-test -c "$ESPPORT"
-sudo --non-interactive docker run --rm --device="$ESPPORT" -e "ESPPORT=$ESPPORT" espressif/idf:v5.3.2 \
-  bash -c 'test -c "$ESPPORT"'
+find -L /dev/serial/by-id /dev -maxdepth 1 -type c \
+  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) -print 2>/dev/null
 ```
 
 Danach führen Sie den Workflow **Firmware CI and hardware deployment** manuell

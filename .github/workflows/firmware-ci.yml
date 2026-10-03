@@ -58,8 +58,6 @@ jobs:
     concurrency:
       group: hardware-${{ matrix.application }}
       cancel-in-progress: false
-    env:
-      ESPPORT: /dev/lnot-board
     strategy:
       fail-fast: false
       matrix:
@@ -83,10 +81,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! test -c "$ESPPORT"; then
-            echo "::error::Serial device $ESPPORT is unavailable. Check the LXC USB bind mount and restart the container after reconnecting the board."
+          declare -A unique_devices=()
+          candidates=()
+          for device in /dev/lnot-board /dev/serial/by-id/* /dev/ttyACM* /dev/ttyUSB*; do
+            if test -c "$device"; then
+              device_id="$(stat -Lc '%t:%T' "$device")"
+              candidates+=("$device")
+              if [[ -z "${unique_devices[$device_id]+present}" ]]; then
+                unique_devices["$device_id"]="$device"
+              fi
+            fi
+          done
+          if (( ${#unique_devices[@]} != 1 )); then
+            echo "::error::Expected exactly one serial device, found ${#unique_devices[@]}. Check the LXC USB passthrough."
+            if (( ${#candidates[@]} > 0 )); then
+              printf '::error::Candidate: %s\n' "${candidates[@]}"
+            fi
             exit 1
           fi
+          for ESPPORT in "${unique_devices[@]}"; do :; done
+          printf 'ESPPORT=%s\n' "$ESPPORT" >> "$GITHUB_ENV"
           echo "Using serial device: $ESPPORT"
       - name: Install Docker when needed
         shell: bash
