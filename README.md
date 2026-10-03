@@ -103,13 +103,25 @@ Falls der Compiler nicht als `cc` im `PATH` verfügbar ist, kann er über `CC` a
 
 ## CI und Hardware-Deployment
 
-Der GitHub-Actions-Workflow baut die aktuellen ESP32-H2- und ESP32-C6-Ziele mit ESP-IDF v5.3.2 und führt den Host-Unit-Test bei Pull Requests sowie Änderungen an `main` aus. Für jeden Build wird ein Firmware-Artefakt 14 Tage bereitgestellt.
+Der GitHub-Actions-Workflow baut die aktuellen ESP32-H2- und ESP32-C6-Ziele
+mit ESP-IDF v5.3.2 und führt die Host-Unit-Tests bei Pull Requests sowie
+Änderungen an `main` aus. Für jeden Build wird ein Firmware-Artefakt 14 Tage
+bereitgestellt.
 
-Nach erfolgreichen Tests werden bei Änderungen an `main` (oder manuell per `workflow_dispatch` auf `main`) die Images auf den zugeordneten Self-hosted Runnern bereitgestellt: `apps/client` auf `ESP32-H2`, `apps/border-router` auf `ESP32-C6`. Die Deployments werden je Hardwareziel serialisiert und verwenden ausschließlich den dem Runner zugewiesenen seriellen Adapter. GitHub-Environments können vor dem Flashen eine Freigabe verlangen. Der Deployment-Job installiert Docker bei Bedarf und führt ESP-IDF sowie `idf.py` im Container `espressif/idf:v5.3.2` aus. Nach dem Flashen überwacht der Workflow die serielle Ausgabe und verlangt die jeweilige Firmware-Ready-Meldung.
+Das Flashen echter Hardware erfolgt ausschließlich manuell über
+`workflow_dispatch` auf `main`. Dabei wird genau ein Ziel (`client` oder
+`border-router`) ausgewählt. Der zugeordnete Self-hosted Runner läuft in einem
+eigenen Proxmox-LXC, verwendet ESP-IDF nativ ohne Docker-in-LXC und akzeptiert
+ausschließlich das feste Gerät `/dev/lnot-board`. Nach dem Flashen wird die
+passende Firmware-Ready-Meldung über die serielle Schnittstelle verifiziert.
 
-Diese Prüfung bestätigt derzeit nur den Start der vorhandenen Minimal-Firmware. Thread-Netzwerkaufbau und Kommunikation zwischen Border Router und Client sind noch nicht implementiert und können daher noch nicht als Hardware-in-the-loop-Test verifiziert werden.
+Diese Prüfung bestätigt derzeit nur den Start der vorhandenen Minimal-Firmware.
+Thread-Netzwerkaufbau und Kommunikation zwischen Border Router und Client sind
+noch nicht implementiert und können daher noch nicht als
+Hardware-in-the-loop-Test verifiziert werden.
 
-Die Einrichtung der Hardware-Runner und der dafür vorgesehenen Proxmox-LXC-Container ist in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) beschrieben.
+Die vollständige Einrichtung der Hardware-Runner und Proxmox-LXC-Container ist
+in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) beschrieben.
 
 ## Nächste fachliche Schritte
 

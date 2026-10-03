@@ -1,123 +1,212 @@
-# Hardware-Deployment
+# Physisches Hardware-Deployment
 
-Dieser Ablauf trennt Build und Auslieferung: GitHub Actions baut beide
-Firmwares und führt die Host-Tests auf GitHub-gehosteten Runnern aus. Erst wenn
-beides erfolgreich ist, wird die bereits gebaute Firmware auf einem
-zugeordneten Hardware-Runner geflasht. Ein Deployment wird bei einem Push auf
-`main` oder durch einen manuellen Workflow-Lauf auf `main` ausgelöst.
+Das Repository baut die Firmware auf GitHub-hosted Runnern. Das Flashen eines
+echten Boards ist davon getrennt und wird ausschließlich manuell über
+`workflow_dispatch` auf `main` gestartet. Der Lauf wählt genau ein Ziel:
 
-| Anwendung | GitHub-Runner-Label | GitHub-Environment | Firmwareziel |
-| --- | --- | --- | --- |
-| `apps/client` | `ESP32-H2` | `hardware-client` | ESP32-H2 |
-| `apps/border-router` | `ESP32-C6` | `hardware-border-router` | ESP32-C6 |
+| Auswahl | Firmware | Runner-Label | Environment | Board |
+| --- | --- | --- | --- | --- |
+| `client` | `apps/client` | `lnot-client` | `hardware-client` | ESP32-H2 |
+| `border-router` | `apps/border-router` | `lnot-border-router` | `hardware-border-router` | ESP32-C6 |
 
-Jeder Runner steuert genau ein Board. Dadurch kann kein paralleler Workflow
-dasselbe serielle Gerät öffnen; zusätzlich serialisiert der Workflow
-Deployments je Anwendung.
+Für jedes Board wird ein eigener privilegierter Proxmox-LXC verwendet. Das
+Board wird ausschließlich in diesen Container durchgereicht und dort unter
+`/dev/lnot-board` sichtbar gemacht. Im LXC läuft ESP-IDF nativ; Docker,
+Docker-in-LXC und eine automatische Installation während des Workflows sind
+nicht Bestandteil dieses Ablaufs.
 
-## GitHub-Konfiguration
+## 1. Proxmox-LXC pro Board
 
-1. Erstellen Sie zwei Self-hosted Runner, jeweils in einem eigenen LXC, und
-   vergeben Sie zusätzlich zum Standardlabel `self-hosted` genau das Label aus
-   der Tabelle.
-2. Erstellen Sie in **Settings > Environments** die Environments
-   `hardware-client` und `hardware-border-router`. Beschränken Sie sie auf den
-   Branch `main` und hinterlegen Sie die für Hardware-Deployments zuständigen
-   Required Reviewers. Ohne konfigurierte Schutzregel wird der automatisch
-   angelegte Environment-Name nicht abgesichert.
-3. Halten Sie die Runner nicht in Gruppen vor, die Pull-Request-Workflows
-   ausführen dürfen. Das Deployment-Job ist auf `main` beschränkt; die
-   Branch- und Environment-Regeln schützen zusätzlich vor versehentlichem
-   Flashen.
+Erstellen Sie für jedes Board einen separaten Debian- oder Ubuntu-LXC:
 
-## Proxmox-LXC vorbereiten
+- **Unprivileged container** deaktivieren (`unprivileged: 0`).
+- Keine zusätzlichen USB- oder seriellen Geräte durchreichen.
+- Einen eindeutigen USB-Pfad unter `/dev/serial/by-id/` vom Proxmox-Host
+  zuordnen.
+- Für den LXC einen festen Bind-Mount auf `/dev/lnot-board` konfigurieren.
 
-Verwenden Sie pro Board einen eigenen, privilegierten Debian- oder
-Ubuntu-LXC. Ein privilegierter Container ist hier erforderlich, weil Docker
-den exklusiv durchgereichten USB-Adapter an den ESP-IDF-Container weitergibt.
-Der Container darf keine anderen nicht benötigten Host-Geräte erhalten.
+Ermitteln Sie den stabilen Pfad auf dem Proxmox-Host, nachdem genau das
+betreffende Board angeschlossen wurde:
 
-Erstellen Sie den Container im Proxmox-Webinterface mit **Unprivileged
-container** deaktiviert. Das im Proxmox-Webinterface unter **Resources**
-hinzugefügte Gerät (`dev0`) mit seinem eindeutigen
-`/dev/serial/by-id/...`-Pfad ist ausreichend und entspricht der bestehenden
-Runner-Konfiguration. Der Workflow erkennt dieses Gerät automatisch.
+```bash
+ls -l /dev/serial/by-id/
+readlink -f /dev/serial/by-id/<board-id>
+```
 
-Alternativ kann die Konfiguration direkt auf dem Proxmox-Host in
-`/etc/pve/lxc/<CTID>.conf` ergänzt werden. Ersetzen Sie den Pfad nach
-`/dev/serial/by-id/` durch den eindeutigen Pfad des angeschlossenen Boards
-aus `ls -l /dev/serial/by-id/`.
+Im Proxmox-Webinterface kann das Gerät unter **Resources** als USB-/Device-
+Passthrough hinzugefügt werden. Alternativ ergänzen Sie die LXC-Konfiguration
+auf dem Proxmox-Host in `/etc/pve/lxc/<CTID>.conf`. Der Quellpfad muss durch den
+realen `by-id`-Pfad ersetzt werden:
 
 ```ini
 unprivileged: 0
-features: nesting=1,keyctl=1
 
-# Für /dev/ttyACM*: USB CDC ACM (Major 166).
+# USB CDC ACM; für USB-Seriell-Adapter siehe den Hinweis darunter.
 lxc.cgroup2.devices.allow: c 166:* rwm
-lxc.mount.entry: /dev/serial/by-id/<eindeutiger-board-pfad> dev/lnot-board none bind,optional,create=file 0 0
+lxc.mount.entry: /dev/serial/by-id/<board-id> dev/lnot-board none bind,optional,create=file 0 0
 ```
 
-Für Adapter, die auf dem Host als `/dev/ttyUSB*` erscheinen, verwenden Sie
-stattdessen `lxc.cgroup2.devices.allow: c 188:* rwm`. Starten Sie den
-Container nach einer Änderung mit `pct restart <CTID>` neu. Wird ein Board
-getrennt oder ausgetauscht, prüfen Sie den `by-id`-Pfad und starten Sie den
-Container erneut, damit der Bind-Mount auf das aktuelle Gerät zeigt.
+Für Adapter, die auf dem Host als `/dev/ttyUSB*` erscheinen, ist zusätzlich
+der Major 188 erforderlich:
 
-Im gestarteten Container muss genau ein serielles Gerät sichtbar und als
-Zeichengerät erkennbar sein. Der Workflow unterstützt `/dev/lnot-board`,
-Einträge unter `/dev/serial/by-id/`, `/dev/ttyACM*` und `/dev/ttyUSB*`:
+```ini
+lxc.cgroup2.devices.allow: c 188:* rwm
+```
+
+Starten Sie den Container nach einer Änderung neu:
 
 ```bash
+pct restart <CTID>
+```
+
+Prüfen Sie im LXC, dass genau der zugewiesene Alias als Zeichengerät sichtbar
+ist und auf das erwartete Gerät zeigt:
+
+```bash
+test -c /dev/lnot-board
+readlink -f /dev/lnot-board
 find -L /dev/serial/by-id /dev -maxdepth 1 -type c \
-  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) -print 2>/dev/null
+  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) \
+  -print 2>/dev/null
 ```
 
-## Bestehende Runner für Deployment vorbereiten
+Wird ein Board ausgetauscht, muss der `by-id`-Pfad erneut geprüft und der LXC
+neu gestartet werden. Der Workflow sucht nicht nach irgendeinem seriellen
+Gerät: Fehlt `/dev/lnot-board` oder ist der Pfad kein Zeichengerät, wird vor
+dem Flashen abgebrochen.
 
-Die LXC-Container und die GitHub Actions Runner existieren bereits. Der
-Deployment-Workflow installiert Docker nur dann, wenn der Befehl noch nicht
-vorhanden ist, startet den Dienst und führt den ESP-IDF-Container mit `sudo
-docker` aus. Dadurch kann der laufende Runner den Container unmittelbar nach
-der Installation verwenden.
+## 2. Native ESP-IDF-Umgebung
 
-Der Runner-Servicebenutzer benötigt dafür passwortloses `sudo` ausschließlich
-für Paketverwaltung, Docker und den Docker-Dienst. Ersetzen Sie
-`github-runner`, falls Ihr Runner unter einem anderen Benutzer läuft. Führen
-Sie dies im LXC als root aus:
+Installieren Sie im jeweiligen LXC die benötigten Pakete und ESP-IDF 5.3.2.
+Die Version muss der Build-Version im Workflow entsprechen:
 
 ```bash
-cat >/etc/sudoers.d/github-runner-lnot-deploy <<'EOF'
-github-runner ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/bin/docker
-EOF
-chmod 440 /etc/sudoers.d/github-runner-lnot-deploy
-visudo --check --file=/etc/sudoers.d/github-runner-lnot-deploy
+apt-get update
+apt-get install --yes \
+  git wget flex bison gperf cmake ninja-build ccache \
+  libffi-dev libssl-dev dfu-util libusb-1.0-0 \
+  python3 python3-pip python3-venv
+
+mkdir -p /opt/esp
+git clone --branch v5.3.2 --depth 1 --recurse-submodules \
+  https://github.com/espressif/esp-idf.git /opt/esp/idf
+/opt/esp/idf/install.sh esp32h2,esp32c6
 ```
 
-Der Workflow erkennt genau einen seriellen Adapter automatisch und setzt
-`ESPPORT` nur für diesen Lauf. Es ist daher keine Runner-Umgebungsvariable und
-kein Neustart des Runner-Dienstes erforderlich. Der Workflow bricht vor dem
-Flashen mit einer konkreten Fehlermeldung ab, wenn kein oder mehr als ein
-passendes Gerät sichtbar ist.
+Der Runner-Service muss `IDF_PATH` kennen. Setzen Sie die Variable in der
+Service-Umgebung des jeweiligen GitHub-Actions-Runners, zum Beispiel mit einem
+systemd-Drop-in:
 
-> **Sicherheitsgrenze:** Docker-Zugriff und die erlaubten `sudo`-Befehle sind
-> im LXC effektiv Root-Rechte. Beschränken Sie den Zugriff auf diese
-> Hardware-Runner auf vertrauenswürdige Workflows von `main` und verwenden Sie
-> sie nicht für Pull Requests oder andere fremde Ausführungskontexte.
+```bash
+systemctl edit actions.runner.<owner>-<repo>.<runner>.service
+```
 
-## Abnahme und Betrieb
+```ini
+[Service]
+Environment=IDF_PATH=/opt/esp/idf
+```
 
-Melden Sie sich als Runner-Benutzer an und prüfen Sie vor der Registrierung
-beziehungsweise nach Änderungen den auf das eine Gerät begrenzten
-Docker-Zugriff:
+Danach den Runner-Service neu starten. Der Workflow sourced selbst
+`$IDF_PATH/export.sh`; es ist nicht erforderlich, `idf.py` global in `PATH`
+zu installieren:
+
+```bash
+systemctl daemon-reload
+systemctl restart actions.runner.<owner>-<repo>.<runner>.service
+```
+
+Der Benutzer des Runner-Service muss das Gerät öffnen können. Bei einer
+üblichen Debian-/Ubuntu-Konfiguration genügt:
+
+```bash
+usermod -aG dialout github-runner
+```
+
+Ersetzen Sie `github-runner` durch den tatsächlichen Servicebenutzer und
+starten Sie den Service danach neu. Testen Sie als dieser Benutzer:
 
 ```bash
 su - github-runner
-find -L /dev/serial/by-id /dev -maxdepth 1 -type c \
-  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) -print 2>/dev/null
+test -r /dev/lnot-board && test -w /dev/lnot-board
+IDF_PATH=/opt/esp/idf bash -lc 'source "$IDF_PATH/export.sh" && idf.py --version'
+python3 -c 'import serial; print(serial.__version__)'
 ```
 
-Danach führen Sie den Workflow **Firmware CI and hardware deployment** manuell
-auf dem Branch `main` aus. Nach der Environment-Freigabe muss der jeweilige
-Job den Adapter melden, die Firmware flashen und die Ready-Meldung im
-Monitor-Log finden. Bei einem fehlenden Gerät, einem falschen Label oder einer
-fehlenden Freigabe darf kein Flash-Vorgang stattfinden.
+Der Runner benötigt weder Docker noch `sudo` für den Workflow. Installieren
+Sie Pakete und ESP-IDF vor der Registrierung beziehungsweise außerhalb eines
+Deployment-Laufs.
+
+## 3. GitHub-Runner und Repository-Konfiguration
+
+Installieren und registrieren Sie im LXC den aktuellen Linux-x64-GitHub-
+Actions-Runner nach der offiziellen GitHub-Anleitung. Verwenden Sie pro
+Container einen eigenen Runnernamen und das jeweilige Hardwarelabel. Ein
+typischer Ablauf nach dem Entpacken des Runner-Archivs ist:
+
+```bash
+./config.sh \
+  --url https://github.com/tamrit-de/LocoNetOverThread \
+  --token <one-time-registration-token> \
+  --name lnot-client-runner \
+  --labels lnot-client \
+  --unattended
+sudo ./svc.sh install github-runner
+sudo ./svc.sh start
+```
+
+Für den C6-Container ersetzen Sie `client` durch `border-router`. Verwenden
+Sie immer ein kurzlebiges Registrierungstoken aus den Repository-Settings und
+schreiben Sie es nicht in das Repository oder in Logs.
+
+Registrieren Sie je LXC einen eigenen Self-hosted Runner im Repository und
+vergeben Sie genau diese zusätzlichen Labels:
+
+- H2-LXC: `lnot-client`
+- C6-LXC: `lnot-border-router`
+
+Das Standardlabel `self-hosted` bleibt erhalten. Ein Runner darf nicht beide
+Hardwarelabels tragen. Begrenzen Sie die Runner-Gruppe auf vertrauenswürdige
+Workflows des privaten Repositorys und lassen Sie keine Pull-Request-Jobs auf
+diesen Runnern laufen.
+
+Erstellen Sie unter **Settings > Environments**:
+
+- `hardware-client`
+- `hardware-border-router`
+
+Beschränken Sie beide Environments auf `main` und konfigurieren Sie bei Bedarf
+Required Reviewers. Die Environment-Namen und Runner-Labels werden im
+Workflow aus der manuellen Zielauswahl abgeleitet. Ein Deployment aus einem
+Pull Request, einem Push oder einem anderen Branch wird vom Job abgelehnt.
+
+## 4. Deployment ausführen
+
+1. Den gewünschten Commit nach `main` integrieren.
+2. In **Actions > Firmware CI and hardware deployment > Run workflow**
+   den Branch `main` und genau ein Ziel (`client` oder `border-router`)
+   auswählen.
+3. Die Environment-Freigabe erteilen, falls Required Reviewers konfiguriert
+   sind.
+4. Die Prüfung des nativen ESP-IDF-Runners und `/dev/lnot-board` abwarten.
+5. Nach dem Flashen muss der passende Ready-Marker im seriellen Log erscheinen:
+   `client firmware is running` beziehungsweise
+   `Border Router ready; AP SSID:`.
+
+Der Workflow baut beide Firmwareziele reproduzierbar und lädt anschließend nur
+das ausgewählte Artefakt auf den zugeordneten Runner. Ein fehlendes, nicht
+lesbares oder mehrdeutig durchgereichtes Gerät beendet den Lauf vor dem
+Flash-Befehl.
+
+## 5. Fehlerdiagnose
+
+| Fehler | Prüfung |
+| --- | --- |
+| `IDF_PATH is not configured` | systemd-Drop-in prüfen, `daemon-reload` ausführen und Runner-Service neu starten |
+| `export.sh` oder `idf.py` fehlt | `/opt/esp/idf` und die Installation für `esp32h2,esp32c6` prüfen |
+| `/dev/lnot-board` fehlt | `by-id`-Pfad auf dem Proxmox-Host, `lxc.mount.entry` und `pct restart` prüfen |
+| Gerät ist kein Zeichengerät | USB-/LXC-Passthrough und den passenden Major (166 oder 188) prüfen |
+| `pyserial` fehlt | `source /opt/esp/idf/export.sh` als Runnerbenutzer testen |
+| Ready-Marker fehlt | serielle Ausgabe und Board-Versorgung prüfen; danach nur einen neuen manuellen Lauf starten |
+
+Serielle Logs können WLAN-Zugangsdaten oder andere lokale Konfiguration
+enthalten. Speichern oder veröffentlichen Sie sie nicht ungeschützt.
