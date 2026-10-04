@@ -51,13 +51,18 @@ jobs:
           esp_idf_version: ${{ env.ESP_IDF_VERSION }}
           target: ${{ matrix.target }}
           path: apps/${{ matrix.application }}
+      - name: Assemble deployment artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy-package/build
+          cp -a "apps/${{ matrix.application }}/build/." deploy-package/build/
+          cp scripts/deploy_hardware.py deploy-package/deploy_hardware.py
       - name: Upload firmware build
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ matrix.application }}-${{ matrix.target }}
-          path: |
-            apps/${{ matrix.application }}/build/
-            apps/${{ matrix.application }}/sdkconfig
+          path: deploy-package/
           if-no-files-found: error
           retention-days: 14
 
@@ -70,54 +75,67 @@ jobs:
     timeout-minutes: 10
     runs-on:
       - self-hosted
-      - "lnot-${{ inputs.target }}"
+      - "${{ inputs.target == 'client' && 'ESP32-H2' || 'ESP32-C6' }}"
     environment:
       name: hardware-${{ inputs.target }}
     concurrency:
       group: hardware-${{ inputs.target }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
       - name: Download selected firmware build
         uses: actions/download-artifact@v4
         with:
           name: firmware-${{ inputs.target }}-${{ inputs.target == 'client' && 'esp32h2' || 'esp32c6' }}
-          path: apps/${{ inputs.target }}
-      - name: Verify native ESP-IDF runner
+          path: deploy-artifact
+      - name: Prepare temporary flasher environment
         shell: bash
-        env:
-          LNOT_DEVICE: /dev/lnot-board
         run: |
           set -euo pipefail
-          test -n "${IDF_PATH:-}" || {
-            echo "::error::IDF_PATH is not configured on this hardware runner."
+          python3 --version
+          python3 -m venv "$RUNNER_TEMP/lnot-flasher"
+          "$RUNNER_TEMP/lnot-flasher/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-cache-dir \
+            --no-input \
+            'esptool==4.7.0' \
+            'pyserial==3.5'
+          printf 'LNOT_FLASHER_PYTHON=%s/bin/python\n' "$RUNNER_TEMP/lnot-flasher" \
+            >> "$GITHUB_ENV"
+      - name: Verify assigned Espressif device
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t devices < <(
+            compgen -G '/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*' || true
+          )
+          if (( ${#devices[@]} != 1 )); then
+            echo "::error::Expected exactly one Espressif USB JTAG serial device."
+            printf '::error::Found: %s\n' "${devices[@]:-none}"
+            exit 1
+          fi
+          test -c "${devices[0]}" || {
+            echo "::error::Assigned path is not a character device: ${devices[0]}"
             exit 1
           }
-          test -f "$IDF_PATH/export.sh" || {
-            echo "::error::ESP-IDF export script not found at $IDF_PATH/export.sh."
-            exit 1
-          }
-          test -c "$LNOT_DEVICE" || {
-            echo "::error::Expected the assigned board at $LNOT_DEVICE."
-            echo "::error::Configure the Proxmox USB passthrough and LXC device alias first."
-            exit 1
-          }
+          printf 'LNOT_DEVICE=%s\n' "${devices[0]}" >> "$GITHUB_ENV"
           printf 'Using assigned board: %s -> %s\n' \
-            "$LNOT_DEVICE" "$(readlink -f "$LNOT_DEVICE")"
-          source "$IDF_PATH/export.sh"
-          idf.py --version
-          python3 -c 'import serial' || {
-            echo "::error::pyserial is missing from the native ESP-IDF environment."
+            "${devices[0]}" "$(readlink -f "${devices[0]}")"
+          "$LNOT_FLASHER_PYTHON" -c \
+            'import esptool, serial; print(esptool.__version__, serial.__version__)'
+      - name: Verify selected firmware artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f deploy-artifact/build/flasher_args.json || {
+            echo "::error::The firmware artifact has no build/flasher_args.json."
             exit 1
           }
       - name: Flash and verify selected device
         shell: bash
-        env:
-          LNOT_DEVICE: /dev/lnot-board
         run: |
           set -euo pipefail
-          source "$IDF_PATH/export.sh"
-          python3 scripts/deploy_hardware.py \
+          "$LNOT_FLASHER_PYTHON" deploy-artifact/deploy_hardware.py \
             --application "${{ inputs.target }}" \
             --port "$LNOT_DEVICE" \
+            --build-directory deploy-artifact/build \
             --timeout-seconds 120

@@ -111,8 +111,11 @@ bereitgestellt.
 Das Flashen echter Hardware erfolgt ausschließlich manuell über
 `workflow_dispatch` auf `main`. Dabei wird genau ein Ziel (`client` oder
 `border-router`) ausgewählt. Der zugeordnete Self-hosted Runner läuft in einem
-eigenen Proxmox-LXC, verwendet ESP-IDF nativ ohne Docker-in-LXC und akzeptiert
-ausschließlich das feste Gerät `/dev/lnot-board`. Nach dem Flashen wird die
+eigenen Proxmox-LXC mit dem vorhandenen Runner-Label `ESP32-H2` oder
+`ESP32-C6`. Der Job installiert `esptool` und `pyserial` in einer temporären
+Python-Umgebung und verwendet genau ein per Proxmox-`dev0` durchgereichtes
+Espressif-Gerät unter `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*`.
+ESP-IDF wird auf dem Hardware-Runner nicht benötigt. Nach dem Flashen wird die
 passende Firmware-Ready-Meldung über die serielle Schnittstelle verifiziert.
 
 Diese Prüfung bestätigt derzeit nur den Start der vorhandenen Minimal-Firmware.
