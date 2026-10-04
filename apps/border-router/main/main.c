@@ -20,6 +20,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lnot_wifi_identity.h"
+#include "lwip/ip4_addr.h"
 #include "mbedtls/md.h"
 #include "mbedtls/pkcs5.h"
 #include "mbedtls/platform_util.h"
@@ -37,6 +38,7 @@
 #define HTTP_BODY_LIMIT 512
 #define SESSION_TIMEOUT_US (30LL * 60LL * 1000LL * 1000LL)
 #define LOGIN_RETRY_DELAY_US (1000LL * 1000LL)
+#define AP_IP_ADDRESS "192.168.70.1"
 
 static const char *const TAG = "lnot_border_router";
 static const char *const WEB_PAGE =
@@ -97,6 +99,7 @@ static bool s_station_connecting;
 static bool s_station_connected;
 static int64_t s_connect_started_us;
 static httpd_handle_t s_http_server;
+static esp_netif_t *s_ap_netif;
 static esp_netif_t *s_station_netif;
 static esp_timer_handle_t s_connect_timeout_timer;
 static char s_ap_ssid[24];
@@ -343,6 +346,48 @@ static esp_err_t send_error(httpd_req_t *request, const char *status, const char
     return httpd_resp_sendstr(request, message);
 }
 
+static esp_err_t configure_ap_network(void)
+{
+    esp_netif_ip_info_t ip_info = {0};
+    IP4_ADDR(&ip_info.ip, 192, 168, 70, 1);
+    IP4_ADDR(&ip_info.gw, 192, 168, 70, 1);
+    IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
+    ESP_RETURN_ON_ERROR(esp_netif_dhcps_stop(s_ap_netif), TAG,
+                        "Could not stop AP DHCP server");
+    ESP_RETURN_ON_ERROR(esp_netif_set_ip_info(s_ap_netif, &ip_info), TAG,
+                        "Could not configure AP IP address");
+    return esp_netif_dhcps_start(s_ap_netif);
+}
+
+static bool request_uses_ap_address(httpd_req_t *request)
+{
+    size_t host_length = httpd_req_get_hdr_value_len(request, "Host");
+    char host[sizeof(AP_IP_ADDRESS) + 7];
+    if (host_length == 0 || host_length >= sizeof(host) ||
+        httpd_req_get_hdr_value_str(request, "Host", host, sizeof(host)) != ESP_OK) {
+        return false;
+    }
+    size_t ap_address_length = strlen(AP_IP_ADDRESS);
+    return strcmp(host, AP_IP_ADDRESS) == 0 ||
+        (strncmp(host, AP_IP_ADDRESS, ap_address_length) == 0 &&
+         host[ap_address_length] == ':');
+}
+
+static esp_err_t redirect_ap_request_to_station(httpd_req_t *request)
+{
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(s_station_netif, &ip_info) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    char station_address[16];
+    snprintf(station_address, sizeof(station_address), IPSTR, IP2STR(&ip_info.ip));
+    char location[32];
+    snprintf(location, sizeof(location), "http://%s/", station_address);
+    httpd_resp_set_status(request, "302 Found");
+    httpd_resp_set_hdr(request, "Location", location);
+    return httpd_resp_send(request, NULL, 0);
+}
+
 static esp_err_t read_json(httpd_req_t *request, cJSON **json)
 {
     if (request->content_len == 0 || request->content_len > HTTP_BODY_LIMIT) {
@@ -379,10 +424,10 @@ static esp_err_t api_state_handler_impl(httpd_req_t *request)
     cJSON_AddBoolToObject(state, "setup", !s_admin_password_set);
     cJSON_AddBoolToObject(state, "loggedIn", authenticated);
     if (authenticated) {
-        const char *mode = s_station_connected ? "client" :
+        const char *mode = s_station_connected ? "access-point + client" :
             s_station_connecting ? "connecting" : "access-point";
         cJSON_AddStringToObject(state, "mode", mode);
-        char address[16] = "192.168.4.1";
+        char address[16] = AP_IP_ADDRESS;
         if (s_station_connected) {
             esp_netif_ip_info_t ip_info;
             if (esp_netif_get_ip_info(s_station_netif, &ip_info) == ESP_OK) {
@@ -407,6 +452,9 @@ static esp_err_t page_handler_impl(httpd_req_t *request)
 {
     httpd_resp_set_type(request, "text/html; charset=utf-8");
     httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    if (s_station_connected && request_uses_ap_address(request)) {
+        return redirect_ap_request_to_station(request);
+    }
     if (s_admin_password_set && !is_authenticated(request)) {
         httpd_resp_set_status(request, "401 Unauthorized");
         return httpd_resp_sendstr(request, WEB_PAGE);
@@ -583,7 +631,7 @@ static void wifi_event_handler(void *argument, esp_event_base_t event_base,
         s_station_connected = true;
         s_station_connecting = false;
         esp_timer_stop(s_connect_timeout_timer);
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED &&
                s_station_connecting) {
         if (esp_timer_get_time() - s_connect_started_us < WIFI_CONNECT_TIMEOUT_US) {
@@ -683,9 +731,9 @@ static esp_err_t start_web_server(void)
 
 static void print_status(void)
 {
-    const char *mode = s_station_connected ? "WiFi client" :
+    const char *mode = s_station_connected ? "AP + WiFi client" :
         s_station_connecting ? "AP + WiFi client connection attempt" : "Access point";
-    char address[16] = "192.168.4.1";
+    char address[16] = AP_IP_ADDRESS;
     if (s_station_connected) {
         esp_netif_ip_info_t ip_info;
         if (esp_netif_get_ip_info(s_station_netif, &ip_info) == ESP_OK) {
@@ -759,9 +807,11 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    if (esp_netif_create_default_wifi_ap() == NULL) {
+    s_ap_netif = esp_netif_create_default_wifi_ap();
+    if (s_ap_netif == NULL) {
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
     }
+    ESP_ERROR_CHECK(configure_ap_network());
     s_station_netif = esp_netif_create_default_wifi_sta();
     if (s_station_netif == NULL) {
         ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
