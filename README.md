@@ -58,8 +58,10 @@ Hex-Zeichen der Geräte-MAC>` (zum Beispiel `LocoNet-A1B2C3D4`). Die WebUI ist
 unter `http://192.168.4.1/` erreichbar. Beim ersten Aufruf muss zuerst ein
 Administratorpasswort mit mindestens 12 Zeichen gesetzt werden. Dieses
 Passwort wird mit PBKDF2-HMAC-SHA256 und individuellem Salt gespeichert.
-Anschließend sind WebUI und Konfigurationsendpunkte nur nach Anmeldung
-zugänglich.
+Nach dem Speichern navigiert die WebUI automatisch auf die authentifizierte
+Startseite. Dasselbe passiert nach einem normalen Login; bei einem Fehler wird
+die Meldung direkt im jeweiligen Formular angezeigt. Anschließend sind WebUI
+und Konfigurationsendpunkte nur nach Anmeldung zugänglich.
 
 Nach dem Speichern von WLAN-Zugangsdaten bleibt der Access Point während eines
 Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg wechselt
