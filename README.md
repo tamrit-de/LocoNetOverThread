@@ -54,17 +54,22 @@ idf.py -C apps/border-router build
 ## Border-Router-WLAN und WebUI
 
 Der Border Router startet zunächst einen offenen Access Point `LocoNet-<letzte 8
-Hex-Zeichen der Geräte-MAC>` (zum Beispiel `LocoNet-A1B2C3D4`). Die WebUI ist
-unter `http://192.168.4.1/` erreichbar. Beim ersten Aufruf muss zuerst ein
+Hex-Zeichen der Geräte-MAC>` (zum Beispiel `LocoNet-A1B2C3D4`) im Netz
+`192.168.70.0/24`. Die WebUI ist unter `http://192.168.70.1/` erreichbar.
+Wenn sich der Border Router anschließend mit dem konfigurierten WLAN verbindet,
+bleibt der AP aktiv; ein Aufruf der initialen Seite über `192.168.70.1` wird
+zur WebUI am aktuellen WLAN-IP weitergeleitet. Beim ersten Aufruf muss zuerst ein
 Administratorpasswort mit mindestens 12 Zeichen gesetzt werden. Dieses
 Passwort wird mit PBKDF2-HMAC-SHA256 und individuellem Salt gespeichert.
-Anschließend sind WebUI und Konfigurationsendpunkte nur nach Anmeldung
-zugänglich.
+Nach dem Speichern navigiert die WebUI automatisch auf die authentifizierte
+Startseite. Dasselbe passiert nach einem normalen Login; bei einem Fehler wird
+die Meldung direkt im jeweiligen Formular angezeigt. Anschließend sind WebUI
+und Konfigurationsendpunkte nur nach Anmeldung zugänglich.
 
 Nach dem Speichern von WLAN-Zugangsdaten bleibt der Access Point während eines
-Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg wechselt
-das Gerät in den WLAN-Client-Modus; andernfalls wird der Access Point
-wiederhergestellt. Zugangsdaten können in der WebUI geändert oder gelöscht
+Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg bleibt der
+Access Point zusammen mit dem WLAN-Client aktiv; andernfalls wird der Access
+Point wiederhergestellt. Zugangsdaten können in der WebUI geändert oder gelöscht
 werden. Die SSID darf 1–32 Zeichen enthalten. Für ein geschütztes WLAN werden
 8–63 Zeichen oder ein 64-stelliger Hex-PSK akzeptiert; ein leeres Passwort
 konfiguriert ein offenes WLAN.
