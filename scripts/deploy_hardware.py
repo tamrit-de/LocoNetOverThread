@@ -25,6 +25,7 @@ APPLICATIONS = {
 }
 DEFAULT_BAUDRATE = 115200
 ESPRESSIF_DEVICE_PATTERN = "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*"
+RESET_MODES = ("default_reset", "usb_reset", "no_reset", "no_reset_no_sync")
 
 
 class DeploymentError(RuntimeError):
@@ -150,8 +151,29 @@ def normalize_extra_esptool_args(
     return normalized
 
 
+def override_before_reset(
+    arguments: list[str], reset_mode: str
+) -> list[str]:
+    """Override the reset mode from the build for the active runner."""
+    if reset_mode not in RESET_MODES:
+        raise DeploymentError(f"Unsupported esptool reset mode: {reset_mode}.")
+
+    overridden = list(arguments)
+    try:
+        before_index = overridden.index("--before")
+    except ValueError:
+        return ["--before", reset_mode, *overridden]
+
+    if before_index + 1 >= len(overridden):
+        raise DeploymentError("Build flash configuration has an incomplete --before option.")
+    overridden[before_index + 1] = reset_mode
+    return overridden
+
+
 def flash_configuration(
-    build_directory: Path, expected_target: str | None = None
+    build_directory: Path,
+    expected_target: str | None = None,
+    before_reset: str | None = None,
 ) -> tuple[list[str], list[str]]:
     """Read the immutable flash image list produced by the build."""
     configuration_path = build_directory / "flasher_args.json"
@@ -178,6 +200,10 @@ def flash_configuration(
         configuration_path,
         expected_target,
     )
+    if before_reset is not None:
+        extra_esptool_args = override_before_reset(
+            extra_esptool_args, before_reset
+        )
     if not isinstance(write_flash_args, list) or not all(
         isinstance(argument, str) for argument in write_flash_args
     ):
@@ -205,9 +231,14 @@ def flash_configuration(
     return extra_esptool_args, write_flash_args + flash_pairs
 
 
-def flash(build_directory: Path, port: Path, expected_target: str) -> None:
+def flash(
+    build_directory: Path,
+    port: Path,
+    expected_target: str,
+    before_reset: str | None,
+) -> None:
     extra_esptool_args, flash_arguments = flash_configuration(
-        build_directory, expected_target
+        build_directory, expected_target, before_reset
     )
     flash_python = os.environ.get("LNOT_FLASHER_PYTHON", sys.executable)
 
@@ -281,6 +312,11 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--application", required=True, choices=sorted(APPLICATIONS))
     parser.add_argument("--port", required=True)
     parser.add_argument(
+        "--before",
+        choices=RESET_MODES,
+        help="Override the esptool reset mode from the build artifact.",
+    )
+    parser.add_argument(
         "--build-directory",
         type=Path,
         help="Directory containing flasher_args.json and the built images.",
@@ -311,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Deploying {arguments.application} ({configuration['target']}) "
             f"to {port}."
         )
-        flash(build_directory, port, configuration["target"])
+        flash(build_directory, port, configuration["target"], arguments.before)
         wait_for_ready(port, configuration["ready_marker"], arguments.timeout_seconds)
         print("Hardware deployment verified.", flush=True)
         return 0

@@ -152,8 +152,11 @@ Der Deployment-Job führt nach dem Artefakt-Download folgende Schritte aus:
 2. Er installiert darin `esptool==4.7.0` und `pyserial==3.5`.
 3. Er sucht genau ein Gerät unter
    `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*`.
-4. Er bricht bei keinem oder mehreren Geräten vor dem Flashen ab.
-5. Er schreibt das ausgewählte Build-Artefakt und prüft den passenden
+4. Er verwendet für das durchgereichte USB-Serial/JTAG-Gerät den esptool-
+   Reset-Modus `usb_reset`. Das ist im LXC erforderlich, wenn die USB-
+   Deskriptoren nicht bis zum Runner durchgereicht werden.
+5. Er bricht bei keinem oder mehreren Geräten vor dem Flashen ab.
+6. Er schreibt das ausgewählte Build-Artefakt und prüft den passenden
    Firmware-Ready-Marker.
 
 Die Installation erfolgt ohne `sudo`, ohne apt und ohne dauerhafte Änderung
@@ -189,6 +192,7 @@ Der Workflow verwendet die Runner-Zuordnung automatisch:
 | Kein Espressif-Gerät gefunden | Proxmox-`dev0`, USB-Kabel, LXC-Neustart und `/dev/serial/by-id` prüfen |
 | Mehrere Espressif-Geräte gefunden | Nur das dem LXC zugewiesene Gerät durchreichen |
 | Gerät ist nicht les-/schreibbar | Runnerbenutzer zur Gruppe `dialout` hinzufügen und Service neu starten |
+| `Failed to get PID` oder `Write timeout` beim USB-Serial/JTAG-Gerät | Prüfen, dass der Workflow `usb_reset` verwendet, das Board mit stabiler Stromversorgung verbunden ist und kein anderer Prozess den Port verwendet; bei Bedarf das Board manuell in den Download-Modus setzen |
 | Falsches Runner-Label | Runner muss genau `ESP32-H2` oder `ESP32-C6` tragen |
 | `flasher_args.json` oder Image fehlt | Build-Artefakt und Upload-Pfade im Build-Job prüfen |
 | Ready-Marker fehlt | Serielle Ausgabe und Board-Versorgung prüfen; danach nur einen neuen manuellen Lauf starten |

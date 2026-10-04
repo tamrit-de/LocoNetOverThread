@@ -16,6 +16,7 @@ from deploy_hardware import (  # noqa: E402
     contains_ready_marker,
     flash_configuration,
     normalize_extra_esptool_args,
+    override_before_reset,
 )
 
 
@@ -113,6 +114,21 @@ class DeploymentToolTests(unittest.TestCase):
                 Path("flasher_args.json"),
                 "esp32h2",
             )
+
+    def test_before_reset_override_replaces_build_mode(self) -> None:
+        self.assertEqual(
+            override_before_reset(
+                ["--before", "default_reset", "--after", "hard_reset"],
+                "usb_reset",
+            ),
+            ["--before", "usb_reset", "--after", "hard_reset"],
+        )
+
+    def test_before_reset_override_adds_missing_mode(self) -> None:
+        self.assertEqual(
+            override_before_reset(["--after", "hard_reset"], "usb_reset"),
+            ["--before", "usb_reset", "--after", "hard_reset"],
+        )
 
     def test_flash_configuration_rejects_images_outside_build_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

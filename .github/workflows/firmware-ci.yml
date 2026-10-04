@@ -137,5 +137,6 @@ jobs:
           "$LNOT_FLASHER_PYTHON" deploy-artifact/deploy_hardware.py \
             --application "${{ inputs.target }}" \
             --port "$LNOT_DEVICE" \
+            --before usb_reset \
             --build-directory deploy-artifact/build \
             --timeout-seconds 120
