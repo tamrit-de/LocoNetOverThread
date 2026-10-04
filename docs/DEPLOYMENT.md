@@ -1,173 +1,138 @@
 # Physisches Hardware-Deployment
 
-Das Repository baut die Firmware auf GitHub-hosted Runnern. Das Flashen eines
-echten Boards ist davon getrennt und wird ausschließlich manuell über
+Der GitHub-Actions-Workflow baut die Firmware auf GitHub-hosted Runnern. Das
+Flashen eines echten Boards wird ausschließlich manuell über
 `workflow_dispatch` auf `main` gestartet. Der Lauf wählt genau ein Ziel:
 
 | Auswahl | Firmware | Runner-Label | Environment | Board |
 | --- | --- | --- | --- | --- |
-| `client` | `apps/client` | `lnot-client` | `hardware-client` | ESP32-H2 |
-| `border-router` | `apps/border-router` | `lnot-border-router` | `hardware-border-router` | ESP32-C6 |
+| `client` | `apps/client` | `ESP32-H2` | `hardware-client` | ESP32-H2 |
+| `border-router` | `apps/border-router` | `ESP32-C6` | `hardware-border-router` | ESP32-C6 |
 
-Für jedes Board wird ein eigener privilegierter Proxmox-LXC verwendet. Das
-Board wird ausschließlich in diesen Container durchgereicht und dort unter
-`/dev/lnot-board` sichtbar gemacht. Im LXC läuft ESP-IDF nativ; Docker,
-Docker-in-LXC und eine automatische Installation während des Workflows sind
-nicht Bestandteil dieses Ablaufs.
+Der Hardware-Runner benötigt dauerhaft nur:
 
-## 1. Proxmox-LXC pro Board
+- den GitHub Actions Runner für Linux x64,
+- Python 3 mit `venv`/`pip`,
+- Zugriff des Runner-Benutzers auf das durchgereichte USB-Gerät.
 
-Erstellen Sie für jedes Board einen separaten Debian- oder Ubuntu-LXC:
+`esptool`, `pyserial`, ESP-IDF, Docker, CMake, Ninja und ein C-Compiler
+werden nicht dauerhaft im LXC installiert. `esptool` und `pyserial` werden
+bei jedem Deployment in einer temporären Python-Umgebung installiert.
+
+## 1. Proxmox-LXC und `dev0`
+
+Verwenden Sie pro Board einen eigenen privilegierten Debian- oder Ubuntu-LXC:
 
 - **Unprivileged container** deaktivieren (`unprivileged: 0`).
-- Keine zusätzlichen USB- oder seriellen Geräte durchreichen.
-- Einen eindeutigen USB-Pfad unter `/dev/serial/by-id/` vom Proxmox-Host
-  zuordnen.
-- Für den LXC einen festen Bind-Mount auf `/dev/lnot-board` konfigurieren.
+- Im Proxmox-Dialog **Resources > Add > Device Passthrough** genau das
+  betreffende Board als `dev0` hinzufügen.
+- Keine weiteren USB- oder seriellen Geräte an diesen LXC durchreichen.
+- Den Runner-LXC mit dem passenden Hardwarelabel registrieren:
+  `ESP32-H2` oder `ESP32-C6`.
 
-Ermitteln Sie den stabilen Pfad auf dem Proxmox-Host, nachdem genau das
-betreffende Board angeschlossen wurde:
+Ermitteln Sie auf dem Proxmox-Host den stabilen Gerätenamen:
 
 ```bash
 ls -l /dev/serial/by-id/
-readlink -f /dev/serial/by-id/<board-id>
 ```
 
-Im Proxmox-Webinterface kann das Gerät unter **Resources** als USB-/Device-
-Passthrough hinzugefügt werden. Alternativ ergänzen Sie die LXC-Konfiguration
-auf dem Proxmox-Host in `/etc/pve/lxc/<CTID>.conf`. Der Quellpfad muss durch den
-realen `by-id`-Pfad ersetzt werden:
+Für diese Boards wird ein Eintrag erwartet, der mit folgendem Muster beginnt:
 
-```ini
-unprivileged: 0
-
-# USB CDC ACM; für USB-Seriell-Adapter siehe den Hinweis darunter.
-lxc.cgroup2.devices.allow: c 166:* rwm
-lxc.mount.entry: /dev/serial/by-id/<board-id> dev/lnot-board none bind,optional,create=file 0 0
+```text
+/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_
 ```
 
-Für Adapter, die auf dem Host als `/dev/ttyUSB*` erscheinen, ist zusätzlich
-der Major 188 erforderlich:
-
-```ini
-lxc.cgroup2.devices.allow: c 188:* rwm
-```
-
-Starten Sie den Container nach einer Änderung neu:
+Der Proxmox-`dev0`-Eintrag muss auf diesen stabilen `by-id`-Pfad zeigen, nicht
+auf einen wechselnden Namen wie `/dev/ttyACM0`. Nach dem Start des LXC prüfen
+Sie **im Container**:
 
 ```bash
-pct restart <CTID>
+find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Espressif_USB_JTAG_serial_*' -print
 ```
 
-Prüfen Sie im LXC, dass genau der zugewiesene Alias als Zeichengerät sichtbar
-ist und auf das erwartete Gerät zeigt:
+Der Befehl muss genau eine Zeile ausgeben. Zusätzlich muss der Pfad ein
+Zeichengerät sein:
 
 ```bash
-test -c /dev/lnot-board
-readlink -f /dev/lnot-board
-find -L /dev/serial/by-id /dev -maxdepth 1 -type c \
-  \( -name 'lnot-board' -o -name 'ttyACM*' -o -name 'ttyUSB*' \) \
-  -print 2>/dev/null
+device="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Espressif_USB_JTAG_serial_*' -print -quit)"
+test -n "$device" && test -c "$device"
+readlink -f "$device"
 ```
 
-Wird ein Board ausgetauscht, muss der `by-id`-Pfad erneut geprüft und der LXC
-neu gestartet werden. Der Workflow sucht nicht nach irgendeinem seriellen
-Gerät: Fehlt `/dev/lnot-board` oder ist der Pfad kein Zeichengerät, wird vor
-dem Flashen abgebrochen.
+Ein eigener `/dev/lnot-board`-Alias und ein `lxc.mount.entry` sind für den
+neuen Ablauf nicht erforderlich. Der Workflow verwendet direkt den stabilen
+`/dev/serial/by-id/...`-Pfad. Wird ein Board ausgetauscht, prüfen Sie den
+`by-id`-Namen erneut und starten Sie den LXC neu.
 
-## 2. Native ESP-IDF-Umgebung
+## 2. Minimale Runner-Voraussetzungen
 
-Installieren Sie im jeweiligen LXC die benötigten Pakete und ESP-IDF 5.3.2.
-Die Version muss der Build-Version im Workflow entsprechen:
+Installieren Sie im LXC nur Python und den GitHub Actions Runner. Python muss
+das Modul `venv` und pip bereitstellen:
 
 ```bash
-apt-get update
-apt-get install --yes \
-  git wget flex bison gperf cmake ninja-build ccache \
-  libffi-dev libssl-dev dfu-util libusb-1.0-0 \
-  python3 python3-pip python3-venv
-
-mkdir -p /opt/esp
-git clone --branch v5.3.2 --depth 1 --recurse-submodules \
-  https://github.com/espressif/esp-idf.git /opt/esp/idf
-/opt/esp/idf/install.sh esp32h2,esp32c6
+python3 --version
+python3 -m venv --help
+python3 -m pip --version
 ```
 
-Der Runner-Service muss `IDF_PATH` kennen. Setzen Sie die Variable in der
-Service-Umgebung des jeweiligen GitHub-Actions-Runners, zum Beispiel mit einem
-systemd-Drop-in:
-
-```bash
-systemctl edit actions.runner.<owner>-<repo>.<runner>.service
-```
-
-```ini
-[Service]
-Environment=IDF_PATH=/opt/esp/idf
-```
-
-Danach den Runner-Service neu starten. Der Workflow sourced selbst
-`$IDF_PATH/export.sh`; es ist nicht erforderlich, `idf.py` global in `PATH`
-zu installieren:
-
-```bash
-systemctl daemon-reload
-systemctl restart actions.runner.<owner>-<repo>.<runner>.service
-```
+Falls `python3 -m venv` auf der Distribution fehlt, muss das passende
+Python-venv-Paket einmalig über die Distribution installiert werden. Es ist
+keine ESP-IDF-Installation erforderlich.
 
 Der Benutzer des Runner-Service muss das Gerät öffnen können. Bei einer
-üblichen Debian-/Ubuntu-Konfiguration genügt:
+üblichen Debian-/Ubuntu-Konfiguration:
 
 ```bash
 usermod -aG dialout github-runner
 ```
 
-Ersetzen Sie `github-runner` durch den tatsächlichen Servicebenutzer und
-starten Sie den Service danach neu. Testen Sie als dieser Benutzer:
+Ersetzen Sie `github-runner` durch den tatsächlichen Servicebenutzer.
+Starten Sie den Runner-Service nach der Gruppenänderung neu und testen Sie
+als dieser Benutzer:
 
 ```bash
 su - github-runner
-test -r /dev/lnot-board && test -w /dev/lnot-board
-IDF_PATH=/opt/esp/idf bash -lc 'source "$IDF_PATH/export.sh" && idf.py --version'
-python3 -c 'import serial; print(serial.__version__)'
+device="$(find -L /dev/serial/by-id -maxdepth 1 -type c \
+  -name 'usb-Espressif_USB_JTAG_serial_*' -print -quit)"
+test -n "$device" && test -r "$device" && test -w "$device"
+python3 -m venv "$HOME/lnot-venv-test"
+rm -rf "$HOME/lnot-venv-test"
 ```
 
-Der Runner benötigt weder Docker noch `sudo` für den Workflow. Installieren
-Sie Pakete und ESP-IDF vor der Registrierung beziehungsweise außerhalb eines
-Deployment-Laufs.
+Der Workflow erstellt seine virtuelle Umgebung nicht im Home-Verzeichnis,
+sondern unter `$RUNNER_TEMP`. Dadurch bleiben keine Python-Pakete oder
+Caches auf dem Runner zurück.
 
 ## 3. GitHub-Runner und Repository-Konfiguration
 
-Installieren und registrieren Sie im LXC den aktuellen Linux-x64-GitHub-
-Actions-Runner nach der offiziellen GitHub-Anleitung. Verwenden Sie pro
-Container einen eigenen Runnernamen und das jeweilige Hardwarelabel. Ein
-typischer Ablauf nach dem Entpacken des Runner-Archivs ist:
+Installieren und registrieren Sie im jeweiligen LXC den aktuellen Linux-x64-
+GitHub-Actions-Runner nach der offiziellen GitHub-Anleitung. Verwenden Sie
+pro Container einen eigenen Runnernamen und genau das passende Label:
 
 ```bash
 ./config.sh \
   --url https://github.com/tamrit-de/LocoNetOverThread \
   --token <one-time-registration-token> \
-  --name lnot-client-runner \
-  --labels lnot-client \
+  --name lnot-esp32-h2 \
+  --labels ESP32-H2 \
   --unattended
 sudo ./svc.sh install github-runner
 sudo ./svc.sh start
 ```
 
-Für den C6-Container ersetzen Sie `client` durch `border-router`. Verwenden
-Sie immer ein kurzlebiges Registrierungstoken aus den Repository-Settings und
-schreiben Sie es nicht in das Repository oder in Logs.
+Für den C6-Container verwenden Sie stattdessen:
 
-Registrieren Sie je LXC einen eigenen Self-hosted Runner im Repository und
-vergeben Sie genau diese zusätzlichen Labels:
-
-- H2-LXC: `lnot-client`
-- C6-LXC: `lnot-border-router`
+```text
+--name lnot-esp32-c6 --labels ESP32-C6
+```
 
 Das Standardlabel `self-hosted` bleibt erhalten. Ein Runner darf nicht beide
 Hardwarelabels tragen. Begrenzen Sie die Runner-Gruppe auf vertrauenswürdige
-Workflows des privaten Repositorys und lassen Sie keine Pull-Request-Jobs auf
-diesen Runnern laufen.
+Workflows und lassen Sie keine Pull-Request-Jobs auf diesen Runnern laufen.
+Verwenden Sie ein kurzlebiges Registrierungstoken und speichern Sie es nicht
+im Repository oder in Logs.
 
 Erstellen Sie unter **Settings > Environments**:
 
@@ -175,38 +140,58 @@ Erstellen Sie unter **Settings > Environments**:
 - `hardware-border-router`
 
 Beschränken Sie beide Environments auf `main` und konfigurieren Sie bei Bedarf
-Required Reviewers. Die Environment-Namen und Runner-Labels werden im
-Workflow aus der manuellen Zielauswahl abgeleitet. Ein Deployment aus einem
-Pull Request, einem Push oder einem anderen Branch wird vom Job abgelehnt.
+Required Reviewers. Ein Deployment aus einem Pull Request, einem Push oder
+einem anderen Branch wird vom Workflow abgelehnt.
 
-## 4. Deployment ausführen
+## 4. Was die Pipeline vorbereitet
+
+Der Deployment-Job führt nach dem Artefakt-Download folgende Schritte aus:
+
+1. Er erstellt mit dem vorhandenen Python eine virtuelle Umgebung unter
+   `$RUNNER_TEMP/lnot-flasher`.
+2. Er installiert darin `esptool==4.7.0` und `pyserial==3.5`.
+3. Er sucht genau ein Gerät unter
+   `/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*`.
+4. Er bricht bei keinem oder mehreren Geräten vor dem Flashen ab.
+5. Er schreibt das ausgewählte Build-Artefakt und prüft den passenden
+   Firmware-Ready-Marker.
+
+Die Installation erfolgt ohne `sudo`, ohne apt und ohne dauerhafte Änderung
+am Runner. Das Build-Artefakt enthält bereits `flasher_args.json` und alle
+Images; der Hardware-Runner muss kein ESP-IDF-Projekt bauen.
+
+## 5. Deployment ausführen
 
 1. Den gewünschten Commit nach `main` integrieren.
-2. In **Actions > Firmware CI and hardware deployment > Run workflow**
-   den Branch `main` und genau ein Ziel (`client` oder `border-router`)
-   auswählen.
+2. In **Actions > Firmware CI and hardware deployment > Run workflow** den
+   Branch `main` und genau ein Ziel (`client` oder `border-router`) auswählen.
 3. Die Environment-Freigabe erteilen, falls Required Reviewers konfiguriert
    sind.
-4. Die Prüfung des nativen ESP-IDF-Runners und `/dev/lnot-board` abwarten.
+4. Die Prüfung der temporären Python-Umgebung und des Espressif-`by-id`-Geräts
+   abwarten.
 5. Nach dem Flashen muss der passende Ready-Marker im seriellen Log erscheinen:
    `client firmware is running` beziehungsweise
    `Border Router ready; AP SSID:`.
 
-Der Workflow baut beide Firmwareziele reproduzierbar und lädt anschließend nur
-das ausgewählte Artefakt auf den zugeordneten Runner. Ein fehlendes, nicht
-lesbares oder mehrdeutig durchgereichtes Gerät beendet den Lauf vor dem
-Flash-Befehl.
+Der Workflow verwendet die Runner-Zuordnung automatisch:
 
-## 5. Fehlerdiagnose
+| Ziel | Verwendetes Runner-Label |
+| --- | --- |
+| `client` | `ESP32-H2` |
+| `border-router` | `ESP32-C6` |
+
+## 6. Fehlerdiagnose
 
 | Fehler | Prüfung |
 | --- | --- |
-| `IDF_PATH is not configured` | systemd-Drop-in prüfen, `daemon-reload` ausführen und Runner-Service neu starten |
-| `export.sh` oder `idf.py` fehlt | `/opt/esp/idf` und die Installation für `esp32h2,esp32c6` prüfen |
-| `/dev/lnot-board` fehlt | `by-id`-Pfad auf dem Proxmox-Host, `lxc.mount.entry` und `pct restart` prüfen |
-| Gerät ist kein Zeichengerät | USB-/LXC-Passthrough und den passenden Major (166 oder 188) prüfen |
-| `pyserial` fehlt | `source /opt/esp/idf/export.sh` als Runnerbenutzer testen |
-| Ready-Marker fehlt | serielle Ausgabe und Board-Versorgung prüfen; danach nur einen neuen manuellen Lauf starten |
+| Python-venv kann nicht erstellt werden | `python3 -m venv --help`; gegebenenfalls das distributionsspezifische Python-venv-Paket installieren |
+| `esptool` oder `pyserial` kann nicht installiert werden | Netzwerkzugriff des Runners auf PyPI und Python-Version prüfen |
+| Kein Espressif-Gerät gefunden | Proxmox-`dev0`, USB-Kabel, LXC-Neustart und `/dev/serial/by-id` prüfen |
+| Mehrere Espressif-Geräte gefunden | Nur das dem LXC zugewiesene Gerät durchreichen |
+| Gerät ist nicht les-/schreibbar | Runnerbenutzer zur Gruppe `dialout` hinzufügen und Service neu starten |
+| Falsches Runner-Label | Runner muss genau `ESP32-H2` oder `ESP32-C6` tragen |
+| `flasher_args.json` oder Image fehlt | Build-Artefakt und Upload-Pfade im Build-Job prüfen |
+| Ready-Marker fehlt | Serielle Ausgabe und Board-Versorgung prüfen; danach nur einen neuen manuellen Lauf starten |
 
 Serielle Logs können WLAN-Zugangsdaten oder andere lokale Konfiguration
 enthalten. Speichern oder veröffentlichen Sie sie nicht ungeschützt.
