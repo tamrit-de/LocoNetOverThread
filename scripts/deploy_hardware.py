@@ -89,7 +89,70 @@ def contains_ready_marker(line: bytes | str, marker: str) -> bool:
     return marker in line
 
 
-def flash_configuration(build_directory: Path) -> tuple[list[str], list[str]]:
+def normalize_extra_esptool_args(
+    raw_arguments: object,
+    configuration_path: Path,
+    expected_target: str | None,
+) -> list[str]:
+    """Normalize ESP-IDF's object format and the legacy argument list."""
+    if isinstance(raw_arguments, list):
+        if not all(isinstance(argument, str) for argument in raw_arguments):
+            raise DeploymentError(
+                f"Build flash configuration {configuration_path} has invalid "
+                "esptool arguments."
+            )
+        return raw_arguments
+
+    if not isinstance(raw_arguments, dict):
+        raise DeploymentError(
+            f"Build flash configuration {configuration_path} has invalid "
+            "esptool arguments."
+        )
+
+    supported_options = {"after", "before", "chip", "stub"}
+    unknown_options = set(raw_arguments) - supported_options
+    if unknown_options:
+        raise DeploymentError(
+            f"Build flash configuration {configuration_path} has unsupported "
+            f"esptool options: {', '.join(sorted(unknown_options))}."
+        )
+
+    chip = raw_arguments.get("chip")
+    if not isinstance(chip, str):
+        raise DeploymentError(
+            f"Build flash configuration {configuration_path} has an invalid chip."
+        )
+    if expected_target is not None and chip != expected_target:
+        raise DeploymentError(
+            f"Build flash configuration {configuration_path} targets {chip}, "
+            f"not {expected_target}."
+        )
+
+    normalized: list[str] = []
+    for option in ("before", "after"):
+        value = raw_arguments.get(option)
+        if value is not None:
+            if not isinstance(value, str):
+                raise DeploymentError(
+                    f"Build flash configuration {configuration_path} has an "
+                    f"invalid {option} option."
+                )
+            normalized.extend((f"--{option}", value))
+
+    stub = raw_arguments.get("stub", True)
+    if not isinstance(stub, bool):
+        raise DeploymentError(
+            f"Build flash configuration {configuration_path} has an invalid stub option."
+        )
+    if not stub:
+        normalized.append("--no-stub")
+
+    return normalized
+
+
+def flash_configuration(
+    build_directory: Path, expected_target: str | None = None
+) -> tuple[list[str], list[str]]:
     """Read the immutable flash image list produced by the build."""
     configuration_path = build_directory / "flasher_args.json"
     try:
@@ -110,20 +173,17 @@ def flash_configuration(build_directory: Path) -> tuple[list[str], list[str]]:
             f"Build flash configuration {configuration_path} has no flash files."
         )
     write_flash_args = configuration.get("write_flash_args", [])
-    extra_esptool_args = configuration.get("extra_esptool_args", [])
+    extra_esptool_args = normalize_extra_esptool_args(
+        configuration.get("extra_esptool_args", []),
+        configuration_path,
+        expected_target,
+    )
     if not isinstance(write_flash_args, list) or not all(
         isinstance(argument, str) for argument in write_flash_args
     ):
         raise DeploymentError(
             f"Build flash configuration {configuration_path} has invalid write arguments."
         )
-    if not isinstance(extra_esptool_args, list) or not all(
-        isinstance(argument, str) for argument in extra_esptool_args
-    ):
-        raise DeploymentError(
-            f"Build flash configuration {configuration_path} has invalid esptool arguments."
-        )
-
     build_root = build_directory.resolve()
     flash_pairs: list[str] = []
     for address, relative_path in flash_files.items():
@@ -146,7 +206,9 @@ def flash_configuration(build_directory: Path) -> tuple[list[str], list[str]]:
 
 
 def flash(build_directory: Path, port: Path, expected_target: str) -> None:
-    extra_esptool_args, flash_arguments = flash_configuration(build_directory)
+    extra_esptool_args, flash_arguments = flash_configuration(
+        build_directory, expected_target
+    )
     flash_python = os.environ.get("LNOT_FLASHER_PYTHON", sys.executable)
 
     environment = os.environ.copy()

@@ -15,6 +15,7 @@ from deploy_hardware import (  # noqa: E402
     assert_single_device_assignment,
     contains_ready_marker,
     flash_configuration,
+    normalize_extra_esptool_args,
 )
 
 
@@ -72,6 +73,46 @@ class DeploymentToolTests(unittest.TestCase):
         self.assertEqual(flash_args[0:2], ["--flash_mode", "dio"])
         self.assertEqual(flash_args[2], "0x1000")
         self.assertEqual(Path(flash_args[3]), image)
+
+    def test_flash_configuration_accepts_esp_idf_extra_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            build_directory = Path(temporary_directory)
+            image = build_directory / "bootloader.bin"
+            image.write_bytes(b"firmware")
+            (build_directory / "flasher_args.json").write_text(
+                '{"flash_files":{"0x1000":"bootloader.bin"},'
+                '"extra_esptool_args":{"after":"hard_reset",'
+                '"before":"default_reset","stub":true,"chip":"esp32h2"}}',
+                encoding="utf-8",
+            )
+
+            extra_args, _ = flash_configuration(build_directory, "esp32h2")
+
+        self.assertEqual(
+            extra_args,
+            ["--before", "default_reset", "--after", "hard_reset"],
+        )
+
+    def test_flash_configuration_rejects_mismatched_esp_idf_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            build_directory = Path(temporary_directory)
+            (build_directory / "flasher_args.json").write_text(
+                '{"flash_files":{"0x1000":"bootloader.bin"},'
+                '"extra_esptool_args":{"after":"hard_reset",'
+                '"before":"default_reset","stub":true,"chip":"esp32c6"}}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(DeploymentError):
+                flash_configuration(build_directory, "esp32h2")
+
+    def test_extra_esptool_arguments_reject_unknown_options(self) -> None:
+        with self.assertRaises(DeploymentError):
+            normalize_extra_esptool_args(
+                {"after": "hard_reset", "unexpected": "value"},
+                Path("flasher_args.json"),
+                "esp32h2",
+            )
 
     def test_flash_configuration_rejects_images_outside_build_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
