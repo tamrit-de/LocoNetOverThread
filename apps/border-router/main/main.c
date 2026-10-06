@@ -156,6 +156,7 @@ static esp_netif_t *s_station_netif;
 static esp_timer_handle_t s_connect_timeout_timer;
 static char s_ap_ssid[24];
 static char s_session_token[65];
+static char s_session_cookie[128];
 static int64_t s_session_last_use_us;
 static int64_t s_next_login_allowed_us;
 static SemaphoreHandle_t s_state_mutex;
@@ -355,10 +356,10 @@ static void set_session_cookie(httpd_req_t *request)
         snprintf(&s_session_token[i * 2], 3, "%02x", random[i]);
     }
     s_session_last_use_us = esp_timer_get_time();
-    char cookie[128];
-    snprintf(cookie, sizeof(cookie), "lnot_session=%s; HttpOnly; SameSite=Strict; Path=/",
+    snprintf(s_session_cookie, sizeof(s_session_cookie),
+             "lnot_session=%s; HttpOnly; SameSite=Strict; Path=/",
              s_session_token);
-    httpd_resp_set_hdr(request, "Set-Cookie", cookie);
+    httpd_resp_set_hdr(request, "Set-Cookie", s_session_cookie);
     mbedtls_platform_zeroize(random, sizeof(random));
 }
 
@@ -367,6 +368,7 @@ static bool is_authenticated(httpd_req_t *request)
     if (s_session_token[0] == '\0' ||
         esp_timer_get_time() - s_session_last_use_us > SESSION_TIMEOUT_US) {
         s_session_token[0] = '\0';
+        mbedtls_platform_zeroize(s_session_cookie, sizeof(s_session_cookie));
         return false;
     }
     size_t length = httpd_req_get_hdr_value_len(request, "Cookie");
@@ -572,6 +574,7 @@ static esp_err_t logout_handler_impl(httpd_req_t *request)
         return send_error(request, "401 Unauthorized", "{\"error\":\"authentication required\"}");
     }
     s_session_token[0] = '\0';
+    mbedtls_platform_zeroize(s_session_cookie, sizeof(s_session_cookie));
     httpd_resp_set_hdr(request, "Set-Cookie", "lnot_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict");
     httpd_resp_set_status(request, "204 No Content");
     return httpd_resp_send(request, NULL, 0);
@@ -831,6 +834,7 @@ static void serial_console_task(void *argument)
         } else if (strncmp(line, "admin set ", 10) == 0) {
             if (save_admin_password(line + 10) == ESP_OK) {
                 s_session_token[0] = '\0';
+                mbedtls_platform_zeroize(s_session_cookie, sizeof(s_session_cookie));
                 puts("Administrator password saved.");
             } else {
                 puts("Password must contain 12 to 128 characters.");
