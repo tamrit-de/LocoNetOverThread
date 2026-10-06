@@ -33,6 +33,8 @@ jobs:
         run: python3 tests/test_deploy_hardware.py
       - name: Run release-packaging tests
         run: python3 tests/test_package_release.py
+      - name: Run WebUI tests
+        run: npm test --prefix web-flasher
 
   build:
     name: Build ${{ matrix.application }} (${{ matrix.target }})

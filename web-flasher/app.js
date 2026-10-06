@@ -1,3 +1,5 @@
+import { chipsMatch } from "./chip-identity.js";
+
 const repository = "tamrit-de/LocoNetOverThread";
 const channels = ["stable", "beta", "alpha"];
 const channelLabels = {
@@ -45,10 +47,6 @@ function setStatus(message, isError = false) {
   elements.status.classList.toggle("error", isError);
 }
 
-function normalizeChip(chip) {
-  return String(chip).toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
 function selectedManifest() {
   return manifests.find(
     (manifest) => manifest.version === elements.release.value,
@@ -58,7 +56,7 @@ function selectedManifest() {
 function compatibleBoards(manifest) {
   if (!manifest || !connectedChip) return [];
   return manifest.hardware.filter(
-    (hardware) => normalizeChip(hardware.chip) === normalizeChip(connectedChip),
+    (hardware) => chipsMatch(hardware.chip, connectedChip),
   );
 }
 
