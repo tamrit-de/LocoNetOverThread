@@ -78,7 +78,9 @@ Die WebUI ist für Desktop und Mobilgeräte ausgelegt. Sie zeigt den
 Verbindungszustand, die aktuelle WebUI-Adresse und den Status der gespeicherten
 WLAN-Zugangsdaten in einer Übersicht. WLAN-Daten werden über ein klar
 gekennzeichnetes Formular gespeichert; erfolgreiche und fehlgeschlagene
-Anfragen erscheinen direkt in der Oberfläche.
+Anfragen erscheinen direkt in der Oberfläche. Der HTTP-Server akzeptiert für
+normale aktuelle Browser Request-Header bis 2 KiB; darüber hinausgehende Header
+bleiben abgewiesen, um den Speicherverbrauch begrenzt zu halten.
 
 Nach dem Speichern von WLAN-Zugangsdaten bleibt der Access Point während eines
 Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg bleibt der
