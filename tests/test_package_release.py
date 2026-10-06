@@ -91,12 +91,24 @@ class ReleasePackageTests(unittest.TestCase):
                     "/releases/download/v1.2.251006.1-alpha/", image["url"]
                 )
 
+            rcp_fragment_path = package_application(
+                "rcp", "v1.2.251006.1-alpha", build, package
+            )
+            rcp_hardware = json.loads(
+                rcp_fragment_path.read_text(encoding="utf-8")
+            )["hardware"][0]
+            self.assertEqual(rcp_hardware["application"], "rcp")
+            self.assertEqual(rcp_hardware["target"], "esp32h2")
+            self.assertEqual(rcp_hardware["chip"], "ESP32-H2")
+            self.assertEqual(rcp_hardware["board"], "ESP32-H2-DevKitM-1-N4")
+
     def test_combines_target_manifests_and_removes_fragments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             package = Path(temporary_directory)
             for application, chip in (
                 ("client", "ESP32-H2"),
                 ("border-router", "ESP32-C6"),
+                ("rcp", "ESP32-H2"),
             ):
                 (package / f"manifest-v1.0.251006.1-{application}.json").write_text(
                     json.dumps(
@@ -116,7 +128,11 @@ class ReleasePackageTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 [entry["chip"] for entry in manifest["hardware"]],
-                ["ESP32-C6", "ESP32-H2"],
+                ["ESP32-C6", "ESP32-H2", "ESP32-H2"],
+            )
+            self.assertEqual(
+                [entry["application"] for entry in manifest["hardware"]],
+                ["border-router", "client", "rcp"],
             )
             self.assertEqual(
                 list(package.glob("manifest-v1.0.251006.1-*.json")), []

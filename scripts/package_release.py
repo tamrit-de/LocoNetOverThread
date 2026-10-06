@@ -23,6 +23,7 @@ REPOSITORY = "tamrit-de/LocoNetOverThread"
 HARDWARE = {
     "client": {"chip": "ESP32-H2", "board": "ESP32-H2-DevKitM-1-N4"},
     "border-router": {"chip": "ESP32-C6", "board": "ESP32-C6-DevKitM-1-N4"},
+    "rcp": {"chip": "ESP32-H2", "board": "ESP32-H2-DevKitM-1-N4"},
 }
 RELEASE_TAG = re.compile(
     r"^v\d+\.\d+\.(?P<date>\d{6})\.\d+(?:-(?P<channel>alpha|beta))?$"

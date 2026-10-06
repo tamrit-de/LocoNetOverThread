@@ -39,6 +39,8 @@ jobs:
             target: esp32h2
           - application: border-router
             target: esp32c6
+          - application: rcp
+            target: esp32h2
     steps:
       - uses: actions/checkout@v4
       - name: Build firmware

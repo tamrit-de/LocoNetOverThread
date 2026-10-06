@@ -12,12 +12,13 @@ Ein LocoNet-Segment darf dagegen immer nur an genau einem Border Router angebund
 
 ## Aktueller Stand
 
-Das erste Inkrement stellt eine reproduzierbar baubare ESP-IDF-Grundlage bereit. Es enthält bewusst noch keine LocoNet-Kommunikation, Thread-Kommissionierung, RCP-Implementierung oder Steuerungs-API.
+Das erste Inkrement stellt eine reproduzierbar baubare ESP-IDF-Grundlage bereit. Es enthält bewusst noch keine LocoNet-Kommunikation, Thread-Kommissionierung, C6↔H2-Integration oder Steuerungs-API.
 
 | Anwendung | Ziel | Aufgabe im Grundgerüst |
 | --- | --- | --- |
 | `apps/client` | ESP32-H2 (aktuelles Entwicklungsziel) | Client-Minimal-Firmware mit Diagnoseausgabe und Lebenszeichen |
 | `apps/border-router` | ESP32-C6 (aktuelles Entwicklungsziel) | Minimal-Firmware für die spätere WiFi- und Steuerseite des Border Routers |
+| `apps/rcp` | ESP32-H2-DevKitM-1-N4 | OpenThread Radio Co-Processor mit der ESP-IDF-SPI-Transportkonfiguration |
 
 Gemeinsame, hardwareunabhängige Logik liegt unter `components/lnot_common`. Target-spezifische Treiber, Pinbelegungen und die spätere SPI-Verbindung zum H2-RCP verbleiben in den jeweiligen Anwendungen.
 
@@ -161,11 +162,16 @@ des Containers. Chrome oder Edge und HTTPS (außer für lokale Tests auf
 und die Bereitstellung sind in
 [docs/WEB-FLASHER.md](docs/WEB-FLASHER.md) beschrieben.
 
+Der Flasher bietet für das ESP32-H2-DevKitM-1-N4 sowohl die Client- als auch
+die **OpenThread RCP (SPI)**-Firmware an. Die RCP-Firmware ist kein
+eigenständiger Client oder Border Router: Sie stellt ausschließlich das
+Thread-Radio für einen über SPI angebundenen Host bereit.
+
 ## Nächste fachliche Schritte
 
 1. LocoNet-Treiber und die Schnittstelle zu den angebundenen Komponenten definieren.
 2. Thread-Client-Funktionalität auf dem ESP32-H2 ergänzen.
-3. SPI-Protokoll und RCP-Firmware für die C6/H2-Kopplung festlegen.
+3. SPI-Protokoll und die C6-Anbindung an die bereitgestellte RCP-Firmware festlegen.
 4. Border-Router-Steuerung über WiFi implementieren.
 
 ## Rahmenbedingungen

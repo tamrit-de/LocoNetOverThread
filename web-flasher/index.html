@@ -34,19 +34,19 @@
         <p>Connect the device by USB, then allow the browser to access its serial port.</p>
         <button id="connect" type="button">Connect and identify device</button>
         <p id="chip" class="result" aria-live="polite">No device connected.</p>
-        <label for="board">Device board</label>
+        <label for="board">Device board and firmware profile</label>
         <select id="board" disabled>
           <option value="">Connect a supported device first</option>
         </select>
         <label class="confirmation">
           <input id="confirm-board" type="checkbox" disabled>
-          I have checked that this is the selected board variant.
+          I have checked that this is the selected board and firmware profile.
         </label>
       </section>
 
       <section aria-labelledby="flash-heading">
         <h2 id="flash-heading">3. Flash firmware</h2>
-        <p id="firmware" class="result" aria-live="polite">Waiting for a compatible device and release.</p>
+        <p id="firmware" class="result" aria-live="polite">Waiting for a compatible device and firmware profile.</p>
         <button id="flash" type="button" disabled>Flash selected firmware</button>
         <progress id="progress" max="100" value="0" aria-label="Flash progress" hidden></progress>
         <p id="status" role="status" aria-live="polite">Ready.</p>
