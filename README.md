@@ -137,6 +137,16 @@ Hardware-in-the-loop-Test verifiziert werden.
 Die vollständige Einrichtung der Hardware-Runner und Proxmox-LXC-Container ist
 in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) beschrieben.
 
+## Browserbasiertes USB-Flashen
+
+Die statische Flash-Seite kann als Docker-Container bereitgestellt werden.
+Veröffentlichte Firmware-Releases und versionierte Manifeste werden zur Laufzeit
+direkt von GitHub geladen; ein neues Release erfordert kein erneutes Deployment
+des Containers. Chrome oder Edge und HTTPS (außer für lokale Tests auf
+`localhost`) sind erforderlich. Unterstützte Boards, Bootloader-Voraussetzungen
+und die Bereitstellung sind in
+[docs/WEB-FLASHER.md](docs/WEB-FLASHER.md) beschrieben.
+
 ## Nächste fachliche Schritte
 
 1. LocoNet-Treiber und die Schnittstelle zu den angebundenen Komponenten definieren.
