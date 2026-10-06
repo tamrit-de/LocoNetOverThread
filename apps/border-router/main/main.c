@@ -101,7 +101,7 @@ static const char *const WEB_PAGE =
     "<p class=\"notice hidden\" data-notice role=\"alert\"></p></section>';"
     "const form=document.querySelector('#auth');form.onsubmit=async event=>{event.preventDefault();"
     "setBusy(form,true);try{await request(setup?'/api/setup':'/api/login','POST',{password:form.elements.password.value});"
-    "window.location.replace('/#dashboard')}catch(error){showNotice(message(error))}finally{setBusy(form,false)}}}"
+    "await refresh()}catch(error){showNotice(message(error))}finally{setBusy(form,false)}}}"
     "function modeLabel(mode){return mode==='access-point + client'?'Verbunden':mode==='connecting'?"
     "'Verbindung wird hergestellt':'Einrichtung aktiv'}"
     "function renderDashboard(state,wifi){root.innerHTML='<section class=\"dashboard\">"
