@@ -60,6 +60,24 @@ jobs:
           mkdir -p deploy-package/build
           cp -a "apps/${{ matrix.application }}/build/." deploy-package/build/
           cp scripts/deploy_hardware.py deploy-package/deploy_hardware.py
+      - name: Package automatic alpha release images
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/package_release.py \
+            --tag "v0.0.0-alpha.$GITHUB_RUN_NUMBER" \
+            --application "${{ matrix.application }}" \
+            --build-directory "apps/${{ matrix.application }}/build" \
+            --package-directory release-package
+      - name: Upload automatic alpha release package
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-firmware-${{ matrix.application }}
+          path: release-package/
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload firmware build
         uses: actions/upload-artifact@v4
         with:
@@ -67,6 +85,62 @@ jobs:
           path: deploy-package/
           if-no-files-found: error
           retention-days: 14
+
+  publish-alpha:
+    name: Publish automatic alpha release
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs:
+      - host-tests
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-firmware-*
+          path: release-assets
+          merge-multiple: true
+      - name: Create or update alpha pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "Automated alpha firmware $RELEASE_TAG"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --target "$GITHUB_SHA" \
+              --title "Automated alpha firmware $RELEASE_TAG" \
+              --notes "Firmware automatically built from main."
+          fi
+      - name: Combine manifests
+        shell: bash
+        env:
+          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          python3 scripts/package_release.py \
+            --tag "$RELEASE_TAG" \
+            --package-directory release-assets \
+            --combine
+      - name: Upload versioned assets to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
   deploy:
     name: Deploy ${{ inputs.target }}
