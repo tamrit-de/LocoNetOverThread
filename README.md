@@ -66,6 +66,14 @@ Startseite. Dasselbe passiert nach einem normalen Login; bei einem Fehler wird
 die Meldung direkt im jeweiligen Formular angezeigt. Anschließend sind WebUI
 und Konfigurationsendpunkte nur nach Anmeldung zugänglich.
 
+Im WLAN-Client-Modus verwendet das Gerät denselben Wert als DeviceName und
+meldet ihn beim DHCP-Server als Hostname an.
+
+Wenn WLAN-Zugangsdaten oder das Administratorpasswort nicht mehr verfügbar
+sind, halten Sie die **BOOT**-Taste des ESP32-C6-DevKitM-1 mindestens
+10 Sekunden gedrückt. Das Gerät löscht seine NVS-Konfiguration und startet
+neu; anschließend ist der Access Point wieder für die Ersteinrichtung aktiv.
+
 Die WebUI ist für Desktop und Mobilgeräte ausgelegt. Sie zeigt den
 Verbindungszustand, die aktuelle WebUI-Adresse und den Status der gespeicherten
 WLAN-Zugangsdaten in einer Übersicht. WLAN-Daten werden über ein klar

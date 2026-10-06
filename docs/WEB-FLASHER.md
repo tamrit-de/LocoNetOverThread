@@ -83,7 +83,8 @@ GitHub Releases geladen.
 4. Prüfen Sie Version und Kanal und starten Sie das Flashen. Die Seite lädt
    alle im Manifest aufgeführten Images, verifiziert Größe und SHA-256, zeigt
    den Schreibfortschritt an und startet das Board nach erfolgreichem Flashen
-   neu.
+   neu. Anschließend öffnet sie den Port mit 115200 Baud erneut und zeigt
+   15 Sekunden lang die Boot-Ausgabe an.
 
 Während Download oder Flashen darf USB nicht getrennt und die Seite nicht
 geschlossen werden. Bei einem Verbindungsfehler trennen Sie USB, halten beim
@@ -92,6 +93,11 @@ in den Bootloader los. Versuchen Sie die Verbindung erneut. Ein unterbrochener
 Flash kann nach erneutem Eintritt in den Bootloader wiederholt werden. Bei
 Fehlern während des Schreibens bleibt das Gerät angeschlossen; beachten Sie
 die angezeigte Fehlermeldung und starten Sie den Vorgang erneut.
+
+Die Boot-Ausgabe wird nur im Browser angezeigt und nicht gespeichert oder
+hochgeladen. Fehlt sie vollständig, obwohl das Flashen erfolgreich war, hat das
+Gerät nach dem Reset möglicherweise nicht gestartet; prüfen Sie Kabel,
+Stromversorgung und die angezeigte Ausgabe auf Reset- oder Bootfehler.
 
 ## Releases und Manifeste
 

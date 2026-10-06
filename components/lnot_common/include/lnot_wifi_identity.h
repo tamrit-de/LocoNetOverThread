@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-bool lnot_wifi_ap_ssid_from_mac(const uint8_t mac[6], char *ssid, size_t capacity);
+bool lnot_wifi_device_name_from_mac(const uint8_t mac[6], char *device_name, size_t capacity);
 
 #ifdef __cplusplus
 }
