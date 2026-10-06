@@ -21,10 +21,12 @@ neues Firmware-Release erfordert deshalb kein erneutes Deployment der Seite.
   werden.
 
 Web Serial kann den ESP-Chip identifizieren, aber nicht zuverlässig das genaue
-Board. Die Seite zeigt daher nur Firmware für den erkannten Chip an und verlangt
-vor dem Flashen, dass der Benutzer die auf dem Board aufgedruckte Variante
-auswählt und bestätigt. Verwenden Sie die Firmware nicht mit einem anderen
-Board, auch wenn dessen ESP-Chip gleich ist.
+Board. Die Seite berücksichtigt dabei nur eine optionale, vom Bootloader
+gemeldete Chip-Revision, etwa `ESP32-H2 (revision v0.1)`, und vergleicht das
+Chipmodell ansonsten exakt. Sie zeigt daher nur Firmware für den erkannten Chip
+an und verlangt vor dem Flashen, dass der Benutzer die auf dem Board
+aufgedruckte Variante auswählt und bestätigt. Verwenden Sie die Firmware nicht
+mit einem anderen Board, auch wenn dessen ESP-Chip gleich ist.
 
 ## Bereitstellung
 
