@@ -66,6 +66,12 @@ Startseite. Dasselbe passiert nach einem normalen Login; bei einem Fehler wird
 die Meldung direkt im jeweiligen Formular angezeigt. Anschließend sind WebUI
 und Konfigurationsendpunkte nur nach Anmeldung zugänglich.
 
+Die WebUI ist für Desktop und Mobilgeräte ausgelegt. Sie zeigt den
+Verbindungszustand, die aktuelle WebUI-Adresse und den Status der gespeicherten
+WLAN-Zugangsdaten in einer Übersicht. WLAN-Daten werden über ein klar
+gekennzeichnetes Formular gespeichert; erfolgreiche und fehlgeschlagene
+Anfragen erscheinen direkt in der Oberfläche.
+
 Nach dem Speichern von WLAN-Zugangsdaten bleibt der Access Point während eines
 Verbindungsversuchs von höchstens 30 Sekunden verfügbar. Bei Erfolg bleibt der
 Access Point zusammen mit dem WLAN-Client aktiv; andernfalls wird der Access
