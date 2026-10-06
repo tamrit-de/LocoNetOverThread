@@ -143,7 +143,9 @@ function releaseAssetByDownloadUrl(release, downloadUrl) {
 }
 
 async function downloadReleaseAsset(asset) {
-  return fetch(asset.url, {
+  const assetPrefix = `/repos/${repository}/releases/assets/`;
+  const assetId = new URL(asset.url).pathname.slice(assetPrefix.length);
+  return fetch(`/github-release-api/${assetId}`, {
     headers: { Accept: "application/octet-stream" },
   });
 }
