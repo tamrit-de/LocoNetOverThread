@@ -127,3 +127,8 @@ API-Asset-Endpunkt aus den Release-Metadaten statt der öffentlichen
 API-Redirect anschließend auf einen same-origin Download-Proxy um. Dadurch
 bleibt die Auslieferung nutzbar, wenn GitHub bei öffentlichen oder finalen
 Download-URLs keine CORS-Header liefert.
+
+Der WebUI-Reverse-Proxy muss dabei das ursprüngliche HTTPS-Schema beibehalten.
+Die Nginx-Konfiguration gibt den Asset-Redirect deshalb relativ zurück; das
+verhindert einen HTTPS-zu-HTTP-Origin-Wechsel, wenn TLS vor dem Container
+terminiert wird.
