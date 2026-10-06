@@ -101,9 +101,13 @@ Stromversorgung und die angezeigte Ausgabe auf Reset- oder Bootfehler.
 
 ## Releases und Manifeste
 
-Veröffentlichen Sie ein GitHub Release mit diesem Tag-Format:
+Veröffentlichen Sie ein GitHub Release mit einem dieser Tag-Formate:
 
-`vMAJOR.MINOR.YYMMDD.RR` (zum Beispiel `v1.2.251006.01`).
+| Kanal | Tag-Format | Beispiel |
+| --- | --- | --- |
+| Stable | `vMAJOR.MINOR.YYMMDD.RR` | `v1.2.251006.01` |
+| Beta | `vMAJOR.MINOR.YYMMDD.RR-beta` | `v1.2.251006.01-beta` |
+| Alpha | `vMAJOR.MINOR.YYMMDD.RR-alpha` | `v1.2.251006.01-alpha` |
 
 `YYMMDD` ist das UTC-Release-Datum, `RR` die Release-Revision.
 
@@ -111,14 +115,14 @@ Der Workflow `Publish firmware release` baut beide unterstützten Targets,
 erstellt aus `flasher_args.json` die vollständige Image-/Adressliste und
 veröffentlicht die Images sowie `manifest-<tag>.json` als Assets des Release.
 Jeder Eintrag enthält Chip, Board, Flash-Einstellungen, Flash-Adresse,
-Download-URL, Dateigröße und SHA-256-Prüfsumme. Der Kanal wird im Manifest
-unabhängig vom Tag gespeichert. Derselbe Tag wird als Firmware-Version
+Download-URL, Dateigröße und SHA-256-Prüfsumme. Der Kanal wird aus dem
+Versions-Suffix abgeleitet; ein Tag ohne Suffix ist Stable. Derselbe Tag wird als Firmware-Version
 kompiliert und in der seriellen Ausgabe sowie der Border-Router-Weboberfläche
 angezeigt. Jeder erfolgreiche Push nach `main` veröffentlicht zusätzlich
-automatisch ein Alpha-Pre-Release mit einem Tag im selben Format. Wählen Sie
+automatisch ein Alpha-Pre-Release mit einem auf `-alpha` endenden Tag. Wählen Sie
 im Flasher den Kanal **Alpha**, um diese automatisch erstellte Firmware zu
-sehen. Stable-Releases werden weiterhin nur durch ein manuell veröffentlichtes
-GitHub Release erstellt. Die automatische Veröffentlichung verwendet die im Workflow
+sehen. Veröffentlichen Sie manuell einen Tag mit `-beta` für Beta-Firmware oder
+ohne Suffix für Stable. Die automatische Veröffentlichung verwendet die im Workflow
 `Firmware CI and hardware deployment` erzeugten Build-Artefakte; sie baut die
 Firmware nicht ein zweites Mal.
 

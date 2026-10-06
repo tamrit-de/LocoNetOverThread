@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           release_date="$(date -u -d "$(git show -s --format=%cI "$GITHUB_SHA")" +%y%m%d)"
-          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER-alpha" >> "$GITHUB_ENV"
       - name: Build firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -74,7 +74,6 @@ jobs:
           set -euo pipefail
           python3 scripts/package_release.py \
             --tag "$LNOT_FIRMWARE_VERSION" \
-            --channel alpha \
             --application "${{ matrix.application }}" \
             --build-directory "apps/${{ matrix.application }}/build" \
             --package-directory release-package
@@ -109,7 +108,7 @@ jobs:
         shell: bash
         run: |
           release_date="$(date -u -d "$(git show -s --format=%cI "$GITHUB_SHA")" +%y%m%d)"
-          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER-alpha" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           pattern: release-firmware-*
@@ -140,7 +139,6 @@ jobs:
           set -euo pipefail
           python3 scripts/package_release.py \
             --tag "$LNOT_FIRMWARE_VERSION" \
-            --channel alpha \
             --package-directory release-assets \
             --combine
       - name: Upload versioned assets to GitHub Release
