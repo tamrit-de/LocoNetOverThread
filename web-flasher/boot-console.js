@@ -8,6 +8,7 @@ export async function captureBootConsole(
     durationMs = bootConsoleDurationMs,
     setTimeoutFn = globalThis.setTimeout,
     clearTimeoutFn = globalThis.clearTimeout,
+    onOutput,
   } = {},
 ) {
   let reader;
@@ -21,6 +22,10 @@ export async function captureBootConsole(
   try {
     await serialPort.open({ baudRate });
     opened = true;
+    await serialPort.setSignals({
+      dataTerminalReady: false,
+      requestToSend: false,
+    });
     if (!serialPort.readable) {
       throw new Error("The serial port did not provide a readable boot console.");
     }
@@ -39,15 +44,19 @@ export async function captureBootConsole(
       const { value, done } = await reader.read();
       if (done) break;
       if (value) {
-        output += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        output += chunk;
+        if (chunk) onOutput?.(chunk);
       }
     }
+    const finalChunk = decoder.decode();
+    output += finalChunk;
+    if (finalChunk) onOutput?.(finalChunk);
     if (cancellationError) {
       throw new Error(
         `Could not stop boot-console capture: ${cancellationError.message}`,
       );
     }
-    output += decoder.decode();
     return { output, timedOut };
   } finally {
     if (reader) {

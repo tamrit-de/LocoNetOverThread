@@ -83,8 +83,10 @@ GitHub Releases geladen.
 4. Prüfen Sie Version und Kanal und starten Sie das Flashen. Die Seite lädt
    alle im Manifest aufgeführten Images, verifiziert Größe und SHA-256, zeigt
    den Schreibfortschritt an und startet das Board nach erfolgreichem Flashen
-   neu. Anschließend öffnet sie den Port mit 115200 Baud erneut und zeigt
-   15 Sekunden lang die Boot-Ausgabe an.
+   neu. Anschließend öffnet sie den Port mit 115200 Baud erneut und zeigt die
+   während des 15-sekündigen Erfassungsfensters eintreffende Boot-Ausgabe in
+   Echtzeit an. Beim erneuten Öffnen setzt die Seite DTR und RTS zurück, damit
+   das Board sofort aus dem Reset startet.
 
 Während Download oder Flashen darf USB nicht getrennt und die Seite nicht
 geschlossen werden. Bei einem Verbindungsfehler trennen Sie USB, halten beim
