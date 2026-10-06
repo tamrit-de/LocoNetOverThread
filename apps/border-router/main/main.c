@@ -41,6 +41,7 @@
 #define PASSWORD_HASH_SIZE 32
 #define PASSWORD_ITERATIONS 100000
 #define HTTP_BODY_LIMIT 512
+#define HTTP_REQUEST_HEADER_LIMIT 2048
 #define SESSION_TIMEOUT_US (30LL * 60LL * 1000LL * 1000LL)
 #define LOGIN_RETRY_DELAY_US (1000LL * 1000LL)
 #define AP_IP_ADDRESS "192.168.70.1"
@@ -802,6 +803,7 @@ static esp_err_t start_web_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 12;
+    config.max_req_hdr_len = HTTP_REQUEST_HEADER_LIMIT;
     config.stack_size = 8192;
     ESP_RETURN_ON_ERROR(httpd_start(&s_http_server, &config), TAG, "Could not start WebUI server");
     register_uri("/", HTTP_GET, page_handler);
