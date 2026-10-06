@@ -15,8 +15,9 @@ neues Firmware-Release erfordert deshalb kein erneutes Deployment der Seite.
 - Ein USB-Datenkabel und ein unterstütztes Board:
   - Client: ESP32-H2-DevKitM-1-N4
   - Border Router: ESP32-C6-DevKitM-1-N4
-- Der Browser muss auf die GitHub-Release-API und GitHub-Release-Dateien
-  zugreifen können.
+- Der Browser muss auf die GitHub-Release-API und die von den Asset-Endpunkten
+  verwendeten Download-Hosts zugreifen können. Das WebUI lädt Manifeste und
+  Firmware über API-Asset-Endpunkte; deren Weiterleitungen sind CORS-kompatibel.
 
 Web Serial kann den ESP-Chip identifizieren, aber nicht zuverlässig das genaue
 Board. Die Seite zeigt daher nur Firmware für den erkannten Chip an und verlangt
@@ -118,3 +119,9 @@ Die Flash-Seite lädt alle Seiten der GitHub-Release-API und verwendet das
 Manifest des jeweiligen Releases. Manifeste müssen die in dieser Version der
 Seite unterstützten Chip-/Board-Zuordnungen enthalten; eine zusätzliche
 Board-Variante wird nicht automatisch freigeschaltet.
+
+Für jedes Manifest und Image verwendet die Flash-Seite den passenden
+API-Asset-Endpunkt aus den Release-Metadaten statt der öffentlichen
+`github.com/.../releases/download/...`-URL. Dadurch bleibt die Auslieferung
+auch dann nutzbar, wenn GitHub bei diesen öffentlichen URLs einen
+CORS-losen Redirect ausliefert.
