@@ -56,6 +56,10 @@ idf.py -C apps/border-router build
 Der Border Router startet zunächst einen offenen Access Point `LocoNet-<letzte 8
 Hex-Zeichen der Geräte-MAC>` (zum Beispiel `LocoNet-A1B2C3D4`) im Netz
 `192.168.70.0/24`. Die WebUI ist unter `http://192.168.70.1/` erreichbar.
+Der ESP32-C6 verwendet fuer Access Point und WLAN-Client 802.11b/g/n/ax;
+bei einem kompatiblen Gegenueber handelt er damit im 2,4-GHz-Band nach
+Wi-Fi 6 (802.11ax), bleibt aber zu aelteren WLAN-Clients und Routern
+kompatibel.
 Wenn sich der Border Router anschließend mit dem konfigurierten WLAN verbindet,
 bleibt der AP aktiv; ein Aufruf der initialen Seite über `192.168.70.1` wird
 zur WebUI am aktuellen WLAN-IP weitergeleitet. Beim ersten Aufruf muss zuerst ein
