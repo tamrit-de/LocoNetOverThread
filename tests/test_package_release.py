@@ -18,14 +18,16 @@ from package_release import (  # noqa: E402
 
 
 class ReleasePackageTests(unittest.TestCase):
-    def test_release_channels_are_independent_of_versioned_tags(self) -> None:
+    def test_release_channels_are_derived_from_versioned_tags(self) -> None:
         self.assertEqual(release_channel("v1.2.251006.1"), "stable")
-        self.assertEqual(release_channel("v1.2.251006.2", "beta"), "beta")
-        self.assertEqual(release_channel("v1.2.251006.3", "alpha"), "alpha")
+        self.assertEqual(release_channel("v1.2.251006.2-beta"), "beta")
+        self.assertEqual(release_channel("v1.2.251006.3-alpha"), "alpha")
         with self.assertRaises(DeploymentError):
             release_channel("main")
         with self.assertRaises(DeploymentError):
             release_channel("v1.2.251332.1")
+        with self.assertRaises(DeploymentError):
+            release_channel("v1.2.251006.4-rc")
 
     def test_packages_every_image_with_flash_address_and_sha256(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -69,13 +71,13 @@ class ReleasePackageTests(unittest.TestCase):
             package = root / "package"
 
             fragment_path = package_application(
-                "client", "v1.2.251006.1", build, package
+                "client", "v1.2.251006.1-alpha", build, package
             )
             fragment = json.loads(fragment_path.read_text(encoding="utf-8"))
 
             hardware = fragment["hardware"][0]
-            self.assertEqual(fragment["version"], "v1.2.251006.1")
-            self.assertEqual(fragment["channel"], "stable")
+            self.assertEqual(fragment["version"], "v1.2.251006.1-alpha")
+            self.assertEqual(fragment["channel"], "alpha")
             self.assertEqual(hardware["chip"], "ESP32-H2")
             self.assertEqual(hardware["board"], "ESP32-H2-DevKitM-1-N4")
             self.assertEqual(
@@ -85,7 +87,9 @@ class ReleasePackageTests(unittest.TestCase):
             for image in hardware["images"]:
                 binary = (package / image["filename"]).read_bytes()
                 self.assertEqual(image["sha256"], hashlib.sha256(binary).hexdigest())
-                self.assertIn("/releases/download/v1.2.251006.1/", image["url"])
+                self.assertIn(
+                    "/releases/download/v1.2.251006.1-alpha/", image["url"]
+                )
 
     def test_combines_target_manifests_and_removes_fragments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
