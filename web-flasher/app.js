@@ -38,6 +38,7 @@ let transport;
 let loader;
 let connectedChip;
 let supportedBoards = [];
+const releaseAssetsByManifest = new WeakMap();
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
@@ -112,11 +113,46 @@ function compareVersions(left, right) {
   });
 }
 
+function validReleaseAssetApiUrl(value) {
+  try {
+    const url = new URL(value);
+    const assetPrefix = `/repos/${repository}/releases/assets/`;
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "api.github.com" &&
+      url.pathname.startsWith(assetPrefix) &&
+      /^\d+$/.test(url.pathname.slice(assetPrefix.length))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function releaseAssetByName(release, name) {
+  return release.assets.find(
+    (asset) => asset.name === name && validReleaseAssetApiUrl(asset.url),
+  );
+}
+
+function releaseAssetByDownloadUrl(release, downloadUrl) {
+  return release.assets.find(
+    (asset) =>
+      asset.browser_download_url === downloadUrl &&
+      validReleaseAssetApiUrl(asset.url),
+  );
+}
+
+async function downloadReleaseAsset(asset) {
+  return fetch(asset.url, {
+    headers: { Accept: "application/octet-stream" },
+  });
+}
+
 async function loadManifest(release) {
   const assetName = `manifest-${release.tag_name}.json`;
-  const asset = release.assets.find((entry) => entry.name === assetName);
+  const asset = releaseAssetByName(release, assetName);
   if (!asset) throw new Error(`Release has no ${assetName} asset.`);
-  const response = await fetch(asset.browser_download_url);
+  const response = await downloadReleaseAsset(asset);
   if (!response.ok) throw new Error(`Could not load ${assetName}.`);
   const manifest = await response.json();
   if (
@@ -134,6 +170,9 @@ async function loadManifest(release) {
         hardware.board !== supported.board ||
         !Array.isArray(hardware.images) ||
         hardware.images.length === 0 ||
+        hardware.images.some(
+          (image) => !releaseAssetByDownloadUrl(release, image.url),
+        ) ||
         !hardware.flash ||
         !["qio", "qout", "dio", "dout"].includes(hardware.flash.flash_mode) ||
         !/^\d+m$/.test(hardware.flash.flash_freq) ||
@@ -143,6 +182,7 @@ async function loadManifest(release) {
   ) {
     throw new Error(`Release manifest ${assetName} is invalid.`);
   }
+  releaseAssetsByManifest.set(manifest, release);
   return manifest;
 }
 
@@ -281,7 +321,9 @@ function validImageUrl(value, tag) {
 }
 
 async function downloadImages(manifest, hardware) {
+  const release = releaseAssetsByManifest.get(manifest);
   if (
+    !release ||
     !hardware.images.length ||
     !hardware.flash ||
     !["flash_mode", "flash_freq", "flash_size"].every(
@@ -301,8 +343,12 @@ async function downloadImages(manifest, hardware) {
     ) {
       throw new Error(`Manifest entry ${image.name} is invalid.`);
     }
+    const asset = releaseAssetByDownloadUrl(release, image.url);
+    if (!asset) {
+      throw new Error(`Release asset ${image.name} is unavailable.`);
+    }
     setStatus(`Downloading and verifying ${image.name}…`);
-    const response = await fetch(image.url);
+    const response = await downloadReleaseAsset(asset);
     if (!response.ok) throw new Error(`Could not download ${image.name}.`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.length !== image.size) {
