@@ -24,7 +24,6 @@
 #include "lnot_wifi_identity.h"
 #include "lwip/ip4_addr.h"
 #include "mbedtls/md.h"
-#include "mbedtls/pkcs5.h"
 #include "mbedtls/platform_util.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -40,10 +39,13 @@
 #define PASSWORD_SALT_SIZE 16
 #define PASSWORD_HASH_SIZE 32
 #define PASSWORD_ITERATIONS 100000
+#define PASSWORD_YIELD_INTERVAL 1024
 #define HTTP_BODY_LIMIT 512
 #define SESSION_TIMEOUT_US (30LL * 60LL * 1000LL * 1000LL)
 #define LOGIN_RETRY_DELAY_US (1000LL * 1000LL)
 #define AP_IP_ADDRESS "192.168.70.1"
+#define WIFI_PROTOCOLS \
+    (WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_11AX)
 
 static const char *const TAG = "lnot_border_router";
 static const char *const WEB_PAGE =
@@ -297,9 +299,50 @@ static esp_err_t derive_password_hash(
     const char *password, const uint8_t salt[PASSWORD_SALT_SIZE],
     uint8_t hash[PASSWORD_HASH_SIZE])
 {
-    int result = mbedtls_pkcs5_pbkdf2_hmac_ext(
-        MBEDTLS_MD_SHA256, (const unsigned char *)password, strlen(password), salt,
-        PASSWORD_SALT_SIZE, PASSWORD_ITERATIONS, PASSWORD_HASH_SIZE, hash);
+    const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (md_info == NULL) {
+        return ESP_FAIL;
+    }
+
+    size_t password_length = strlen(password);
+    uint8_t initial_input[PASSWORD_SALT_SIZE + 4];
+    uint8_t previous[PASSWORD_HASH_SIZE];
+    uint8_t next[PASSWORD_HASH_SIZE];
+    uint8_t accumulated[PASSWORD_HASH_SIZE];
+    memcpy(initial_input, salt, PASSWORD_SALT_SIZE);
+    initial_input[PASSWORD_SALT_SIZE] = 0;
+    initial_input[PASSWORD_SALT_SIZE + 1] = 0;
+    initial_input[PASSWORD_SALT_SIZE + 2] = 0;
+    initial_input[PASSWORD_SALT_SIZE + 3] = 1;
+
+    int result = mbedtls_md_hmac(
+        md_info, (const unsigned char *)password, password_length, initial_input,
+        sizeof(initial_input), previous);
+    if (result == 0) {
+        memcpy(accumulated, previous, sizeof(accumulated));
+        for (size_t iteration = 1; iteration < PASSWORD_ITERATIONS; ++iteration) {
+            result = mbedtls_md_hmac(
+                md_info, (const unsigned char *)password, password_length, previous,
+                sizeof(previous), next);
+            if (result != 0) {
+                break;
+            }
+            for (size_t byte = 0; byte < sizeof(accumulated); ++byte) {
+                accumulated[byte] ^= next[byte];
+            }
+            memcpy(previous, next, sizeof(previous));
+            if (iteration % PASSWORD_YIELD_INTERVAL == 0) {
+                vTaskDelay(1);
+            }
+        }
+    }
+    if (result == 0) {
+        memcpy(hash, accumulated, sizeof(accumulated));
+    }
+    mbedtls_platform_zeroize(initial_input, sizeof(initial_input));
+    mbedtls_platform_zeroize(previous, sizeof(previous));
+    mbedtls_platform_zeroize(next, sizeof(next));
+    mbedtls_platform_zeroize(accumulated, sizeof(accumulated));
     return result == 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -908,6 +951,8 @@ void app_main(void)
     wifi_init_config_t wifi_init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_init));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOLS));
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOLS));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL));
     const esp_timer_create_args_t timeout_args = {
