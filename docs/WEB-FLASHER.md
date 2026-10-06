@@ -101,26 +101,24 @@ Stromversorgung und die angezeigte Ausgabe auf Reset- oder Bootfehler.
 
 ## Releases und Manifeste
 
-Veröffentlichen Sie ein GitHub Release mit einem dieser Tag-Formate:
+Veröffentlichen Sie ein GitHub Release mit diesem Tag-Format:
 
-| Tag | Kanal |
-| --- | --- |
-| `vMAJOR.MINOR.PATCH` (zum Beispiel `v1.2.3`) | Stable |
-| `vMAJOR.MINOR.PATCH-beta.N` | Beta |
-| `vMAJOR.MINOR.PATCH-alpha.N` | Alpha |
+`vMAJOR.MINOR.YYMMDD.RR` (zum Beispiel `v1.2.251006.01`).
+
+`YYMMDD` ist das UTC-Release-Datum, `RR` die Release-Revision.
 
 Der Workflow `Publish firmware release` baut beide unterstützten Targets,
 erstellt aus `flasher_args.json` die vollständige Image-/Adressliste und
 veröffentlicht die Images sowie `manifest-<tag>.json` als Assets des Release.
 Jeder Eintrag enthält Chip, Board, Flash-Einstellungen, Flash-Adresse,
-Download-URL, Dateigröße und SHA-256-Prüfsumme. Die Kanalzuordnung stammt aus
-dem versionierten Tag. Alpha- und Beta-Releases müssen als GitHub
-Pre-releases veröffentlicht werden. Jeder erfolgreiche Push nach `main`
-veröffentlicht zusätzlich automatisch ein Alpha-Pre-Release mit dem Tag
-`v0.0.0-alpha.<GitHub-Run-Nummer>`. Wählen Sie im Flasher den Kanal
-**Alpha**, um diese automatisch erstellte Firmware zu sehen. Stable-Releases
-werden weiterhin nur durch ein manuell veröffentlichtes GitHub Release
-erstellt. Die automatische Veröffentlichung verwendet die im Workflow
+Download-URL, Dateigröße und SHA-256-Prüfsumme. Der Kanal wird im Manifest
+unabhängig vom Tag gespeichert. Derselbe Tag wird als Firmware-Version
+kompiliert und in der seriellen Ausgabe sowie der Border-Router-Weboberfläche
+angezeigt. Jeder erfolgreiche Push nach `main` veröffentlicht zusätzlich
+automatisch ein Alpha-Pre-Release mit einem Tag im selben Format. Wählen Sie
+im Flasher den Kanal **Alpha**, um diese automatisch erstellte Firmware zu
+sehen. Stable-Releases werden weiterhin nur durch ein manuell veröffentlichtes
+GitHub Release erstellt. Die automatische Veröffentlichung verwendet die im Workflow
 `Firmware CI and hardware deployment` erzeugten Build-Artefakte; sie baut die
 Firmware nicht ein zweites Mal.
 

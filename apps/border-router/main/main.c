@@ -7,6 +7,7 @@
 
 #include "cJSON.h"
 #include "driver/gpio.h"
+#include "esp_app_desc.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -84,7 +85,7 @@ static const char *const WEB_PAGE =
     ".card{padding:20px}.overview{grid-template-columns:1fr}.auth{margin-top:4vh}}"
     "</style></head><body><div class=\"shell\"><header class=\"brand\">"
     "<div class=\"brand-mark\">LN</div><div><h1>LocoNet Border Router</h1>"
-    "<p>Netzwerk und Gerätezustand verwalten</p></div></header><main id=\"app\"></main></div>"
+    "<p>Netzwerk und Gerätezustand verwalten <span id=\"firmware-version\"></span></p></div></header><main id=\"app\"></main></div>"
     "<script>"
     "const root=document.querySelector('#app');"
     "function message(error){try{const json=JSON.parse(error.message);return json.error||'Anfrage fehlgeschlagen'}"
@@ -132,7 +133,7 @@ static const char *const WEB_PAGE =
     "try{await request('/api/wifi','DELETE');await refresh()}catch(error){showNotice(message(error))}};"
     "root.querySelector('#logout').onclick=async()=>{try{await request('/api/logout','POST',{});window.location.replace('/')}"
     "catch(error){showNotice(message(error))}}}"
-    "async function refresh(){const state=await request('/api/state');if(state.setup)return renderAuth(true);"
+    "async function refresh(){const state=await request('/api/state');document.querySelector('#firmware-version').textContent='Firmware-Version: '+state.version;if(state.setup)return renderAuth(true);"
     "if(!state.loggedIn)return renderAuth(false);renderDashboard(state,await request('/api/wifi'))}"
     "refresh().catch(error=>{root.innerHTML='<section class=\"card auth\"><h2>WebUI nicht verfügbar</h2>"
     "<p class=\"notice error\">'+message(error)+'</p><button onclick=\"location.reload()\">Erneut versuchen</button></section>'})"
@@ -481,6 +482,7 @@ static esp_err_t api_state_handler_impl(httpd_req_t *request)
     bool authenticated = is_authenticated(request);
     cJSON_AddBoolToObject(state, "setup", !s_admin_password_set);
     cJSON_AddBoolToObject(state, "loggedIn", authenticated);
+    cJSON_AddStringToObject(state, "version", esp_app_get_description()->version);
     if (authenticated) {
         const char *mode = s_station_connected ? "access-point + client" :
             s_station_connecting ? "connecting" : "access-point";
@@ -825,8 +827,9 @@ static void print_status(void)
             snprintf(address, sizeof(address), IPSTR, IP2STR(&ip_info.ip));
         }
     }
-    printf("Mode: %s; WebUI: http://%s/; AP SSID: %s; WiFi credentials: %s; "
-           "administrator password: %s\n", mode, address, s_device_name,
+    printf("Firmware: %s; Mode: %s; WebUI: http://%s/; AP SSID: %s; WiFi credentials: %s; "
+           "administrator password: %s\n", esp_app_get_description()->version, mode, address,
+           s_device_name,
            s_have_wifi_credentials ? "configured" : "not configured",
            s_admin_password_set ? "configured" : "not configured");
 }

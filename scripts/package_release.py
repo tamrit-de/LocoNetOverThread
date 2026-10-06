@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -23,7 +24,8 @@ HARDWARE = {
     "client": {"chip": "ESP32-H2", "board": "ESP32-H2-DevKitM-1-N4"},
     "border-router": {"chip": "ESP32-C6", "board": "ESP32-C6-DevKitM-1-N4"},
 }
-RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+(?:-(alpha|beta)\.\d+)?$")
+RELEASE_TAG = re.compile(r"^v\d+\.\d+\.(?P<date>\d{6})\.\d+$")
+RELEASE_CHANNELS = ("stable", "beta", "alpha")
 FLASH_SETTINGS = {
     "--flash_mode": "flash_mode",
     "--flash_freq": "flash_freq",
@@ -31,14 +33,19 @@ FLASH_SETTINGS = {
 }
 
 
-def release_channel(tag: str) -> str:
+def release_channel(tag: str, channel: str = "stable") -> str:
     match = RELEASE_TAG.fullmatch(tag)
     if match is None:
+        raise DeploymentError("Release tags must use vMAJOR.MINOR.YYMMDD.RR.")
+    try:
+        datetime.strptime(match.group("date"), "%y%m%d")
+    except ValueError as error:
         raise DeploymentError(
-            "Release tags must use vMAJOR.MINOR.PATCH, optionally followed by "
-            "-alpha.N or -beta.N."
-        )
-    return match.group(1) or "stable"
+            "Release tags must include a valid YYMMDD date."
+        ) from error
+    if channel not in RELEASE_CHANNELS:
+        raise DeploymentError(f"Unsupported release channel: {channel}.")
+    return channel
 
 
 def flash_settings(arguments: list[str]) -> dict[str, str]:
@@ -59,9 +66,10 @@ def flash_settings(arguments: list[str]) -> dict[str, str]:
 
 
 def package_application(
-    application: str, tag: str, build_directory: Path, package_directory: Path
+    application: str, tag: str, build_directory: Path, package_directory: Path,
+    channel: str = "stable",
 ) -> Path:
-    channel = release_channel(tag)
+    channel = release_channel(tag, channel)
     configuration = application_configuration(application)
     target = configuration["target"]
     extra_arguments, flash_arguments = flash_configuration(build_directory, target)
@@ -118,8 +126,10 @@ def package_application(
     return fragment_path
 
 
-def combine_manifests(tag: str, package_directory: Path) -> Path:
-    channel = release_channel(tag)
+def combine_manifests(
+    tag: str, package_directory: Path, channel: str = "stable"
+) -> Path:
+    channel = release_channel(tag, channel)
     hardware = []
     for application in sorted(HARDWARE):
         fragment_path = package_directory / f"manifest-{tag}-{application}.json"
@@ -162,13 +172,16 @@ def main() -> None:
     parser.add_argument("--package-directory", type=Path, required=True)
     parser.add_argument("--application", choices=sorted(HARDWARE))
     parser.add_argument("--build-directory", type=Path)
+    parser.add_argument("--channel", choices=RELEASE_CHANNELS, default="stable")
     parser.add_argument("--combine", action="store_true")
     arguments = parser.parse_args()
 
     if arguments.combine:
         if arguments.application or arguments.build_directory:
             parser.error("--combine cannot be used with build arguments")
-        result = combine_manifests(arguments.tag, arguments.package_directory)
+        result = combine_manifests(
+            arguments.tag, arguments.package_directory, arguments.channel
+        )
     else:
         if not arguments.application or not arguments.build_directory:
             parser.error("packaging requires --application and --build-directory")
@@ -177,6 +190,7 @@ def main() -> None:
             arguments.tag,
             arguments.build_directory,
             arguments.package_directory,
+            arguments.channel,
         )
     print(result)
 
