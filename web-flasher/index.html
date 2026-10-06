@@ -50,6 +50,10 @@
         <button id="flash" type="button" disabled>Flash selected firmware</button>
         <progress id="progress" max="100" value="0" aria-label="Flash progress" hidden></progress>
         <p id="status" role="status" aria-live="polite">Ready.</p>
+        <div id="boot-console-container" hidden>
+          <h3>Boot output</h3>
+          <pre id="boot-console" aria-live="polite"></pre>
+        </div>
       </section>
 
       <aside>

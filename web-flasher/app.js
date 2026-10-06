@@ -1,4 +1,9 @@
 import { chipsMatch } from "./chip-identity.js";
+import {
+  bootConsoleBaudRate,
+  bootConsoleDurationMs,
+  captureBootConsole,
+} from "./boot-console.js";
 
 const repository = "tamrit-de/LocoNetOverThread";
 const channels = ["stable", "beta", "alpha"];
@@ -31,6 +36,8 @@ const elements = Object.fromEntries(
     "flash",
     "progress",
     "status",
+    "boot-console-container",
+    "boot-console",
   ].map((id) => [id, document.getElementById(id)]),
 );
 
@@ -45,6 +52,23 @@ const releaseAssetsByManifest = new WeakMap();
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
   elements.status.classList.toggle("error", isError);
+}
+
+function showBootConsole(output) {
+  elements["boot-console"].textContent = output;
+  elements["boot-console-container"].hidden = false;
+}
+
+function resetFlasherConnection() {
+  loader = undefined;
+  transport = undefined;
+  serialPort = undefined;
+  connectedChip = undefined;
+  elements.chip.textContent = "Device restarted.";
+  elements.board.replaceChildren(new Option("Connect a supported device first", ""));
+  elements.board.disabled = true;
+  elements["confirm-board"].checked = false;
+  elements["confirm-board"].disabled = true;
 }
 
 function selectedManifest() {
@@ -384,6 +408,8 @@ async function flashSelectedFirmware() {
   elements.flash.disabled = true;
   elements.progress.hidden = false;
   elements.progress.value = 0;
+  elements["boot-console-container"].hidden = true;
+  elements["boot-console"].textContent = "";
   const { files, flash } = await downloadImages(manifest, hardware);
   const totalBytes = files.reduce((total, file) => total + file.data.length, 0);
   await loader.writeFlash({
@@ -407,15 +433,43 @@ async function flashSelectedFirmware() {
   await transport.disconnect();
   loader = undefined;
   transport = undefined;
-  serialPort = undefined;
-  connectedChip = undefined;
-  elements.chip.textContent = "Device restarted.";
-  elements.board.replaceChildren(new Option("Connect a supported device first", ""));
-  elements.board.disabled = true;
-  elements["confirm-board"].checked = false;
-  elements["confirm-board"].disabled = true;
+  setStatus(
+    `Flash complete. Reading boot output for ${bootConsoleDurationMs / 1000} seconds…`,
+  );
+
+  let bootConsole;
+  try {
+    bootConsole = await captureBootConsole(serialPort, {
+      baudRate: bootConsoleBaudRate,
+      durationMs: bootConsoleDurationMs,
+    });
+  } catch (error) {
+    showBootConsole(`Could not read boot output: ${error.message}`);
+    resetFlasherConnection();
+    elements.progress.value = 100;
+    setStatus(
+      `Firmware flashed, but boot output could not be read: ${error.message}`,
+      true,
+    );
+    return;
+  }
+
+  resetFlasherConnection();
   elements.progress.value = 100;
-  setStatus(`Successfully flashed ${manifest.version} (${manifest.channel}).`);
+  if (bootConsole.output) {
+    showBootConsole(bootConsole.output);
+    setStatus(
+      `Successfully flashed ${manifest.version} (${manifest.channel}). Boot output was captured.`,
+    );
+  } else {
+    showBootConsole(
+      `No boot output was received during the ${bootConsoleDurationMs / 1000}-second capture window.`,
+    );
+    setStatus(
+      `Firmware flashed, but no boot output was received after the reset. The device may not have started.`,
+      true,
+    );
+  }
 }
 
 elements.channel.addEventListener("change", updateReleaseOptions);
