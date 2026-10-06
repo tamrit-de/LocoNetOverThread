@@ -10,7 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from deploy_hardware import (  # noqa: E402
     DeploymentError,
-    APPLICATIONS,
+    HARDWARE_DEPLOYMENT_APPLICATIONS,
+    READY_MARKERS,
     application_configuration,
     assert_single_device_assignment,
     contains_ready_marker,
@@ -26,6 +27,8 @@ class DeploymentToolTests(unittest.TestCase):
         self.assertEqual(
             application_configuration("border-router")["target"], "esp32c6"
         )
+        self.assertEqual(application_configuration("rcp")["target"], "esp32h2")
+        self.assertNotIn("rcp", HARDWARE_DEPLOYMENT_APPLICATIONS)
 
     def test_unknown_application_is_rejected(self) -> None:
         with self.assertRaises(DeploymentError):
@@ -51,7 +54,7 @@ class DeploymentToolTests(unittest.TestCase):
             )
 
     def test_ready_marker_is_detected_in_text_and_bytes(self) -> None:
-        marker = APPLICATIONS["client"]["ready_marker"]
+        marker = READY_MARKERS["client"]
         self.assertTrue(contains_ready_marker(f"I: {marker}", marker))
         self.assertTrue(contains_ready_marker(f"I: {marker}".encode(), marker))
         self.assertFalse(contains_ready_marker("boot failed", marker))

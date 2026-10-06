@@ -14,6 +14,7 @@ neues Firmware-Release erfordert deshalb kein erneutes Deployment der Seite.
   betrieben werden.
 - Ein USB-Datenkabel und ein unterstütztes Board:
   - Client: ESP32-H2-DevKitM-1-N4
+  - OpenThread RCP (SPI): ESP32-H2-DevKitM-1-N4
   - Border Router: ESP32-C6-DevKitM-1-N4
 - Der Browser muss auf die GitHub-Release-API zugreifen können. Der
   Web-Container reicht die Asset-Endpunkte und deren Download-Weiterleitungen
@@ -21,12 +22,15 @@ neues Firmware-Release erfordert deshalb kein erneutes Deployment der Seite.
   werden.
 
 Web Serial kann den ESP-Chip identifizieren, aber nicht zuverlässig das genaue
-Board. Die Seite berücksichtigt dabei nur eine optionale, vom Bootloader
+Board und Firmware-Profil. Die Seite berücksichtigt dabei nur eine optionale, vom Bootloader
 gemeldete Chip-Revision, etwa `ESP32-H2 (revision v0.1)`, und vergleicht das
 Chipmodell ansonsten exakt. Sie zeigt daher nur Firmware für den erkannten Chip
 an und verlangt vor dem Flashen, dass der Benutzer die auf dem Board
 aufgedruckte Variante auswählt und bestätigt. Verwenden Sie die Firmware nicht
-mit einem anderen Board, auch wenn dessen ESP-Chip gleich ist.
+mit einem anderen Board oder Firmware-Profil, auch wenn dessen ESP-Chip gleich
+ist. Die **OpenThread RCP (SPI)**-Auswahl ist nur für einen über SPI
+angebundenen Host bestimmt; sie ersetzt weder Client- noch Border-Router-
+Firmware.
 
 ## Bereitstellung
 
@@ -77,9 +81,11 @@ GitHub Releases geladen.
    wobei die neueste Version des Kanals vorausgewählt ist.
 2. Verbinden Sie das Board per USB und wählen Sie **Connect and identify
    device**. Bestätigen Sie den Browserdialog für den seriellen Port.
-3. Prüfen Sie den erkannten ESP-Chip. Wählen Sie die exakt passende Board-
-   Variante und bestätigen Sie die Auswahl anhand der Beschriftung auf dem
-   Board.
+3. Prüfen Sie den erkannten ESP-Chip. Wählen Sie die exakt passende Board- und
+   Firmware-Profil-Variante und bestätigen Sie die Auswahl anhand der
+   Beschriftung auf dem Board. Für **OpenThread RCP (SPI)** verwendet das
+   ESP-IDF-v5.3.2-Profil am H2 SPI2: SCLK GPIO0, MISO GPIO1, CS GPIO2, MOSI
+   GPIO3 und Interrupt GPIO9.
 4. Prüfen Sie Version und Kanal und starten Sie das Flashen. Die Seite lädt
    alle im Manifest aufgeführten Images, verifiziert Größe und SHA-256, zeigt
    den Schreibfortschritt an und startet das Board nach erfolgreichem Flashen
@@ -113,7 +119,8 @@ Veröffentlichen Sie ein GitHub Release mit einem dieser Tag-Formate:
 
 `YYMMDD` ist das UTC-Release-Datum, `RR` die Release-Revision.
 
-Der Workflow `Publish firmware release` baut beide unterstützten Targets,
+Der Workflow `Publish firmware release` baut alle unterstützten
+Firmware-Profile,
 erstellt aus `flasher_args.json` die vollständige Image-/Adressliste und
 veröffentlicht die Images sowie `manifest-<tag>.json` als Assets des Release.
 Jeder Eintrag enthält Chip, Board, Flash-Einstellungen, Flash-Adresse,

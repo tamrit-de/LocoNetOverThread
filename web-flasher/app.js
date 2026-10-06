@@ -1,4 +1,5 @@
 import { chipsMatch } from "./chip-identity.js";
+import { supportedHardware } from "./firmware-profiles.js";
 import {
   bootConsoleBaudRate,
   bootConsoleDurationMs,
@@ -11,18 +12,6 @@ const channelLabels = {
   stable: "Stable",
   beta: "Beta",
   alpha: "Alpha (experimental)",
-};
-const supportedHardware = {
-  client: {
-    target: "esp32h2",
-    chip: "ESP32-H2",
-    board: "ESP32-H2-DevKitM-1-N4",
-  },
-  "border-router": {
-    target: "esp32c6",
-    chip: "ESP32-C6",
-    board: "ESP32-C6-DevKitM-1-N4",
-  },
 };
 const elements = Object.fromEntries(
   [
@@ -94,11 +83,11 @@ function updateBoardOptions() {
   const boards = compatibleBoards(selectedManifest());
   supportedBoards = boards;
   elements.board.replaceChildren();
-  elements.board.add(new Option("Choose the exact board variant…", ""));
+  elements.board.add(new Option("Choose the exact board and firmware profile…", ""));
   for (const hardware of boards) {
     elements.board.add(
       new Option(
-        `${hardware.board} — ${hardware.application}`,
+        `${hardware.board} — ${supportedHardware[hardware.application].label}`,
         hardware.application,
       ),
     );
@@ -130,8 +119,8 @@ function updateFlashButton() {
   const manifest = selectedManifest();
   elements.firmware.textContent =
     hardware && manifest
-      ? `${manifest.version} (${manifest.channel}) — ${hardware.board}`
-      : "Waiting for a compatible device and release.";
+      ? `${manifest.version} (${manifest.channel}) — ${hardware.board} — ${supportedHardware[hardware.application].label}`
+      : "Waiting for a compatible device and firmware profile.";
 }
 
 function compareVersions(left, right) {
@@ -402,11 +391,11 @@ async function flashSelectedFirmware() {
     (entry) => entry.application === elements.board.value,
   );
   if (!manifest || !hardware || !elements["confirm-board"].checked) {
-    throw new Error("Select and confirm the exact supported board first.");
+    throw new Error("Select and confirm the exact supported board and firmware profile first.");
   }
   if (
     !window.confirm(
-      `Flash ${manifest.version} (${manifest.channel}) to ${hardware.board}?`,
+      `Flash ${manifest.version} (${manifest.channel}) to ${hardware.board} (${supportedHardware[hardware.application].label})?`,
     )
   ) {
     return;

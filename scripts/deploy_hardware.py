@@ -14,14 +14,14 @@ from pathlib import Path
 
 
 APPLICATIONS = {
-    "client": {
-        "target": "esp32h2",
-        "ready_marker": "client firmware is running",
-    },
-    "border-router": {
-        "target": "esp32c6",
-        "ready_marker": "Border Router ready; AP SSID:",
-    },
+    "client": {"target": "esp32h2"},
+    "border-router": {"target": "esp32c6"},
+    "rcp": {"target": "esp32h2"},
+}
+HARDWARE_DEPLOYMENT_APPLICATIONS = ("client", "border-router")
+READY_MARKERS = {
+    "client": "client firmware is running",
+    "border-router": "Border Router ready; AP SSID:",
 }
 DEFAULT_BAUDRATE = 115200
 ESPRESSIF_DEVICE_PATTERN = "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_*"
@@ -309,7 +309,11 @@ def wait_for_ready(port: Path, marker: str, timeout_seconds: float) -> None:
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--application", required=True, choices=sorted(APPLICATIONS))
+    parser.add_argument(
+        "--application",
+        required=True,
+        choices=sorted(HARDWARE_DEPLOYMENT_APPLICATIONS),
+    )
     parser.add_argument("--port", required=True)
     parser.add_argument(
         "--before",
@@ -348,7 +352,9 @@ def main(argv: list[str] | None = None) -> int:
             f"to {port}."
         )
         flash(build_directory, port, configuration["target"], arguments.before)
-        wait_for_ready(port, configuration["ready_marker"], arguments.timeout_seconds)
+        wait_for_ready(
+            port, READY_MARKERS[arguments.application], arguments.timeout_seconds
+        )
         print("Hardware deployment verified.", flush=True)
         return 0
     except (DeploymentError, OSError, subprocess.CalledProcessError) as error:
