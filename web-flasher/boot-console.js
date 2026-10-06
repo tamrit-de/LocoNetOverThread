@@ -22,6 +22,10 @@ export async function captureBootConsole(
   try {
     await serialPort.open({ baudRate });
     opened = true;
+    await serialPort.setSignals({
+      dataTerminalReady: false,
+      requestToSend: false,
+    });
     if (!serialPort.readable) {
       throw new Error("The serial port did not provide a readable boot console.");
     }

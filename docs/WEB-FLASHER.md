@@ -85,7 +85,8 @@ GitHub Releases geladen.
    den Schreibfortschritt an und startet das Board nach erfolgreichem Flashen
    neu. Anschließend öffnet sie den Port mit 115200 Baud erneut und zeigt die
    während des 15-sekündigen Erfassungsfensters eintreffende Boot-Ausgabe in
-   Echtzeit an.
+   Echtzeit an. Beim erneuten Öffnen setzt die Seite DTR und RTS zurück, damit
+   das Board sofort aus dem Reset startet.
 
 Während Download oder Flashen darf USB nicht getrennt und die Seite nicht
 geschlossen werden. Bei einem Verbindungsfehler trennen Sie USB, halten beim

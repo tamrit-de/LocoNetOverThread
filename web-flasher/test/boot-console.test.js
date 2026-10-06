@@ -23,6 +23,9 @@ function createSerialPort(readResults) {
     async open(options) {
       port.openOptions = options;
     },
+    async setSignals(signals) {
+      port.signals = signals;
+    },
     async close() {
       port.closed = true;
     },
@@ -33,6 +36,7 @@ function createSerialPort(readResults) {
     },
     closed: false,
     openOptions: undefined,
+    signals: undefined,
   };
   return { port, reader };
 }
@@ -52,6 +56,10 @@ test("captures boot output at the configured console baud rate", async () => {
   });
 
   assert.deepEqual(port.openOptions, { baudRate: bootConsoleBaudRate });
+  assert.deepEqual(port.signals, {
+    dataTerminalReady: false,
+    requestToSend: false,
+  });
   assert.equal(result.output, "booting\nready\n");
   assert.deepEqual(chunks, ["booting\n", "ready\n"]);
   assert.equal(result.timedOut, false);
