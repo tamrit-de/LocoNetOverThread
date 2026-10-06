@@ -1,5 +1,3 @@
-import { ESPLoader, Transport } from "./vendor/esptool.js";
-
 const repository = "tamrit-de/LocoNetOverThread";
 const channels = ["stable", "beta", "alpha"];
 const channelLabels = {
@@ -225,6 +223,17 @@ async function connectDevice() {
     throw new Error("Web Serial is unavailable. Use Chrome or Microsoft Edge.");
   }
   serialPort = await navigator.serial.requestPort();
+  let esptool;
+  try {
+    esptool = await import("./vendor/esptool.js");
+  } catch {
+    const error = new Error(
+      "The flasher library is missing. Deploy the WebUI using Docker and reload.",
+    );
+    error.name = "FlasherAssetError";
+    throw error;
+  }
+  const { ESPLoader, Transport } = esptool;
   transport = new Transport(serialPort, true);
   loader = new ESPLoader({
     transport,
@@ -375,7 +384,9 @@ elements.connect.addEventListener("click", async () => {
     const message =
       error.name === "NotFoundError"
         ? "No serial port was selected."
-        : `Could not connect to the device. Enter bootloader mode by holding BOOT while reconnecting USB, then try again. ${error.message}`;
+        : error.name === "FlasherAssetError"
+          ? error.message
+          : `Could not connect to the device. Enter bootloader mode by holding BOOT while reconnecting USB, then try again. ${error.message}`;
     setStatus(message, true);
     if (transport) await transport.disconnect().catch(() => {});
     loader = undefined;
