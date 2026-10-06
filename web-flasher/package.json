@@ -1,0 +1,10 @@
+{
+  "name": "loconet-over-thread-web-flasher",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned esptool-js browser flasher dependency",
+  "type": "module",
+  "dependencies": {
+    "esptool-js": "0.7.0"
+  }
+}

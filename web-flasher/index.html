@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>LocoNetOverThread USB Flasher</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">LocoNet over Thread</p>
+        <h1>USB Firmware Flasher</h1>
+        <p>Update a supported device directly from Chrome or Microsoft Edge.</p>
+      </header>
+
+      <section aria-labelledby="release-heading">
+        <h2 id="release-heading">1. Choose a release</h2>
+        <label for="channel">Release channel</label>
+        <select id="channel">
+          <option value="stable" selected>Stable</option>
+          <option value="beta">Beta</option>
+          <option value="alpha">Alpha (experimental)</option>
+        </select>
+        <label for="release">Version</label>
+        <select id="release" disabled>
+          <option>Loading releases…</option>
+        </select>
+        <p class="hint">Beta and Alpha contain pre-release firmware. Select them explicitly.</p>
+      </section>
+
+      <section aria-labelledby="device-heading">
+        <h2 id="device-heading">2. Identify your device</h2>
+        <p>Connect the device by USB, then allow the browser to access its serial port.</p>
+        <button id="connect" type="button">Connect and identify device</button>
+        <p id="chip" class="result" aria-live="polite">No device connected.</p>
+        <label for="board">Device board</label>
+        <select id="board" disabled>
+          <option value="">Connect a supported device first</option>
+        </select>
+        <label class="confirmation">
+          <input id="confirm-board" type="checkbox" disabled>
+          I have checked that this is the selected board variant.
+        </label>
+      </section>
+
+      <section aria-labelledby="flash-heading">
+        <h2 id="flash-heading">3. Flash firmware</h2>
+        <p id="firmware" class="result" aria-live="polite">Waiting for a compatible device and release.</p>
+        <button id="flash" type="button" disabled>Flash selected firmware</button>
+        <progress id="progress" max="100" value="0" aria-label="Flash progress" hidden></progress>
+        <p id="status" role="status" aria-live="polite">Ready.</p>
+      </section>
+
+      <aside>
+        <strong>Bootloader recovery:</strong> If connection fails, unplug the USB cable.
+        Hold the board's BOOT button while reconnecting, release it after connection,
+        then try again. Do not unplug or close this page while flashing. If flashing
+        is interrupted, retry the same steps and flash again.
+      </aside>
+      <footer>
+        <a href="https://github.com/tamrit-de/LocoNetOverThread/blob/main/docs/WEB-FLASHER.md">
+          Browser, USB and board requirements
+        </a>
+      </footer>
+    </main>
+  </body>
+</html>
