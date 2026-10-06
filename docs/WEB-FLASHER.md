@@ -108,7 +108,9 @@ erstellt aus `flasher_args.json` die vollständige Image-/Adressliste und
 veröffentlicht die Images sowie `manifest-<tag>.json` als Assets des Release.
 Jeder Eintrag enthält Chip, Board, Flash-Einstellungen, Flash-Adresse,
 Download-URL, Dateigröße und SHA-256-Prüfsumme. Die Kanalzuordnung stammt aus
-dem versionierten Tag. Alpha- und Beta-Releases müssen als GitHub
+dem versionierten Tag. Derselbe Tag wird als Firmware-Version kompiliert und
+in der seriellen Ausgabe sowie der Border-Router-Weboberfläche angezeigt.
+Alpha- und Beta-Releases müssen als GitHub
 Pre-releases veröffentlicht werden. Jeder erfolgreiche Push nach `main`
 veröffentlicht zusätzlich automatisch ein Alpha-Pre-Release mit dem Tag
 `v0.0.0-alpha.<GitHub-Run-Nummer>`. Wählen Sie im Flasher den Kanal

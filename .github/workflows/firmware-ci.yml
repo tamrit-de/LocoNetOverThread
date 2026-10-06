@@ -20,6 +20,7 @@ permissions:
 
 env:
   ESP_IDF_VERSION: v5.3.2
+  LNOT_FIRMWARE_VERSION: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('v0.0.0-alpha.{0}', github.run_number) || 'v0.0.0-alpha.0' }}
 
 jobs:
   host-tests:

@@ -10,6 +10,7 @@ permissions:
 
 env:
   ESP_IDF_VERSION: v5.3.2
+  LNOT_FIRMWARE_VERSION: ${{ github.ref_name }}
 
 jobs:
   test:
