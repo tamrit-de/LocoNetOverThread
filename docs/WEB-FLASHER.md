@@ -26,6 +26,33 @@ Board, auch wenn dessen ESP-Chip gleich ist.
 
 ## Bereitstellung
 
+### Portainer
+
+1. Erstellen Sie in Portainer einen neuen **Stack** und wählen Sie
+   **Repository** als Build-Methode.
+2. Verwenden Sie als Repository-URL
+   `https://github.com/tamrit-de/LocoNetOverThread.git`, wählen Sie den
+   gewünschten Branch und geben Sie als Compose-Pfad `compose.yml` an.
+3. Setzen Sie optional die Umgebungsvariable `WEB_FLASHER_PORT` auf einen
+   freien Host-Port; ohne Variable wird Port `8080` verwendet. Stellen Sie den
+   Stack bereit. Portainer baut dabei mit `web-flasher/` als Kontext und
+   installiert die festgelegte Abhängigkeit `esptool-js@0.7.0`.
+4. Richten Sie im TLS-Reverse-Proxy einen Host für die Flash-Domain ein, der
+   auf `http://<Docker-Host>:<WEB_FLASHER_PORT>` weiterleitet. Erzwingen Sie
+   HTTPS und verwenden Sie ein gültiges Zertifikat. Web Serial funktioniert
+   außerhalb von `localhost` nicht über HTTP.
+5. Prüfen Sie nach dem Start im Browser
+   `https://<Flash-Domain>/vendor/esptool.js`. Der Abruf muss JavaScript statt
+   einer 404-Seite liefern. Diese Datei wird ausschließlich beim Docker-Build
+   aus `node_modules/esptool-js/bundle.js` erzeugt und liegt daher nicht im
+   Git-Arbeitsbaum.
+
+Veröffentlichen Sie nicht direkt den Ordner `web-flasher/` als statische
+Website: Dort fehlt die beim Docker-Build erzeugte Datei
+`vendor/esptool.js`, sodass der Modulimport in `app.js` fehlschlägt.
+
+### Docker CLI
+
 ```sh
 docker build -t loconet-usb-flasher ./web-flasher
 docker run --rm -p 8080:80 loconet-usb-flasher
