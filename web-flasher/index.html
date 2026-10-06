@@ -19,16 +19,14 @@
       <section aria-labelledby="release-heading">
         <h2 id="release-heading">1. Choose a release</h2>
         <label for="channel">Release channel</label>
-        <select id="channel">
-          <option value="stable" selected>Stable</option>
-          <option value="beta">Beta</option>
-          <option value="alpha">Alpha (experimental)</option>
+        <select id="channel" disabled>
+          <option>Loading channels…</option>
         </select>
         <label for="release">Version</label>
         <select id="release" disabled>
           <option>Loading releases…</option>
         </select>
-        <p class="hint">Beta and Alpha contain pre-release firmware. Select them explicitly.</p>
+        <p class="hint">Only channels with published firmware are listed. Beta and Alpha contain pre-release firmware.</p>
       </section>
 
       <section aria-labelledby="device-heading">

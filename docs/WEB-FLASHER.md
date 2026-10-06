@@ -66,9 +66,11 @@ GitHub Releases geladen.
 
 ## Flash-Vorgang
 
-1. Öffnen Sie die Flash-Seite in Chrome oder Edge und wählen Sie einen
-   Release-Kanal. **Stable** ist vorausgewählt. Beta und Alpha müssen explizit
-   ausgewählt werden.
+1. Öffnen Sie die Flash-Seite in Chrome oder Edge. Die Seite zeigt nur
+   Release-Kanäle mit veröffentlichter Firmware an und wählt bevorzugt
+   **Stable** aus; ist kein Stable-Release verfügbar, wird der nächste
+   verfügbare Kanal verwendet. Wählen Sie anschließend die gewünschte Version,
+   wobei die neueste Version des Kanals vorausgewählt ist.
 2. Verbinden Sie das Board per USB und wählen Sie **Connect and identify
    device**. Bestätigen Sie den Browserdialog für den seriellen Port.
 3. Prüfen Sie den erkannten ESP-Chip. Wählen Sie die exakt passende Board-
@@ -103,9 +105,16 @@ veröffentlicht die Images sowie `manifest-<tag>.json` als Assets des Release.
 Jeder Eintrag enthält Chip, Board, Flash-Einstellungen, Flash-Adresse,
 Download-URL, Dateigröße und SHA-256-Prüfsumme. Die Kanalzuordnung stammt aus
 dem versionierten Tag. Alpha- und Beta-Releases müssen als GitHub
-Pre-releases veröffentlicht werden.
+Pre-releases veröffentlicht werden. Jeder erfolgreiche Push nach `main`
+veröffentlicht zusätzlich automatisch ein Alpha-Pre-Release mit dem Tag
+`v0.0.0-alpha.<GitHub-Run-Nummer>`. Wählen Sie im Flasher den Kanal
+**Alpha**, um diese automatisch erstellte Firmware zu sehen. Stable-Releases
+werden weiterhin nur durch ein manuell veröffentlichtes GitHub Release
+erstellt. Die automatische Veröffentlichung verwendet die im Workflow
+`Firmware CI and hardware deployment` erzeugten Build-Artefakte; sie baut die
+Firmware nicht ein zweites Mal.
 
-Die Flash-Seite listet Releases aus der GitHub-API und verwendet das Manifest
-des jeweiligen Releases. Manifeste müssen die in dieser Version der Seite
-unterstützten Chip-/Board-Zuordnungen enthalten; eine zusätzliche
+Die Flash-Seite lädt alle Seiten der GitHub-Release-API und verwendet das
+Manifest des jeweiligen Releases. Manifeste müssen die in dieser Version der
+Seite unterstützten Chip-/Board-Zuordnungen enthalten; eine zusätzliche
 Board-Variante wird nicht automatisch freigeschaltet.

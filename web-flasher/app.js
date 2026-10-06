@@ -2,6 +2,11 @@ import { ESPLoader, Transport } from "./vendor/esptool.js";
 
 const repository = "tamrit-de/LocoNetOverThread";
 const channels = ["stable", "beta", "alpha"];
+const channelLabels = {
+  stable: "Stable",
+  beta: "Beta",
+  alpha: "Alpha (experimental)",
+};
 const supportedHardware = {
   client: {
     target: "esp32h2",
@@ -145,12 +150,20 @@ async function loadManifest(release) {
 
 async function loadReleases() {
   setStatus("Loading published firmware releases…");
-  const response = await fetch(
-    `https://api.github.com/repos/${repository}/releases?per_page=100`,
-    { headers: { Accept: "application/vnd.github+json" } },
-  );
-  if (!response.ok) throw new Error("GitHub releases could not be loaded.");
-  const releases = await response.json();
+  const releases = [];
+  for (let page = 1; ; page += 1) {
+    const response = await fetch(
+      `https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`,
+      { headers: { Accept: "application/vnd.github+json" } },
+    );
+    if (!response.ok) throw new Error("GitHub releases could not be loaded.");
+    const releasePage = await response.json();
+    if (!Array.isArray(releasePage)) {
+      throw new Error("GitHub releases could not be read.");
+    }
+    releases.push(...releasePage);
+    if (releasePage.length < 100) break;
+  }
   const results = await Promise.allSettled(
     releases
       .filter((release) => !release.draft)
@@ -163,9 +176,28 @@ async function loadReleases() {
   if (manifests.length === 0) {
     throw new Error("No published firmware releases with valid manifests were found.");
   }
-  elements.release.disabled = false;
+  updateChannelOptions();
+  setStatus(
+    `Releases loaded. ${channelLabels[elements.channel.value]} is selected by default.`,
+  );
+}
+
+function updateChannelOptions() {
+  const availableChannels = channels.filter((channel) =>
+    manifests.some((manifest) => manifest.channel === channel),
+  );
+  const previouslySelected = elements.channel.value;
+  elements.channel.replaceChildren();
+  for (const channel of availableChannels) {
+    elements.channel.add(
+      new Option(channelLabels[channel], channel),
+    );
+  }
+  elements.channel.value = availableChannels.includes(previouslySelected)
+    ? previouslySelected
+    : availableChannels[0];
+  elements.channel.disabled = false;
   updateReleaseOptions();
-  setStatus("Releases loaded. Stable is selected by default.");
 }
 
 function updateReleaseOptions() {
