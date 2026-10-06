@@ -44,8 +44,6 @@
 #define SESSION_TIMEOUT_US (30LL * 60LL * 1000LL * 1000LL)
 #define LOGIN_RETRY_DELAY_US (1000LL * 1000LL)
 #define AP_IP_ADDRESS "192.168.70.1"
-#define WIFI_PROTOCOLS \
-    (WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_11AX)
 
 static const char *const TAG = "lnot_border_router";
 static const char *const WEB_PAGE =
@@ -951,8 +949,6 @@ void app_main(void)
     wifi_init_config_t wifi_init = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_init));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOLS));
-    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOLS));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL));
     const esp_timer_create_args_t timeout_args = {
