@@ -20,7 +20,6 @@ permissions:
 
 env:
   ESP_IDF_VERSION: v5.3.2
-  LNOT_FIRMWARE_VERSION: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('v0.0.0-alpha.{0}', github.run_number) || 'v0.0.0-alpha.0' }}
 
 jobs:
   host-tests:
@@ -50,6 +49,11 @@ jobs:
             target: esp32c6
     steps:
       - uses: actions/checkout@v4
+      - name: Set automatic firmware version
+        shell: bash
+        run: |
+          release_date="$(date -u -d "$(git show -s --format=%cI "$GITHUB_SHA")" +%y%m%d)"
+          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Build firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
@@ -69,7 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/package_release.py \
-            --tag "v0.0.0-alpha.$GITHUB_RUN_NUMBER" \
+            --tag "$LNOT_FIRMWARE_VERSION" \
+            --channel alpha \
             --application "${{ matrix.application }}" \
             --build-directory "apps/${{ matrix.application }}/build" \
             --package-directory release-package
@@ -100,6 +105,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Set automatic firmware version
+        shell: bash
+        run: |
+          release_date="$(date -u -d "$(git show -s --format=%cI "$GITHUB_SHA")" +%y%m%d)"
+          echo "LNOT_FIRMWARE_VERSION=v0.0.$release_date.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
           pattern: release-firmware-*
@@ -109,38 +119,35 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
+          if gh release view "$LNOT_FIRMWARE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$LNOT_FIRMWARE_VERSION" \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
-              --title "Automated alpha firmware $RELEASE_TAG"
+              --title "Automated alpha firmware $LNOT_FIRMWARE_VERSION"
           else
-            gh release create "$RELEASE_TAG" \
+            gh release create "$LNOT_FIRMWARE_VERSION" \
               --repo "$GITHUB_REPOSITORY" \
               --prerelease \
               --target "$GITHUB_SHA" \
-              --title "Automated alpha firmware $RELEASE_TAG" \
+              --title "Automated alpha firmware $LNOT_FIRMWARE_VERSION" \
               --notes "Firmware automatically built from main."
           fi
       - name: Combine manifests
         shell: bash
-        env:
-          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
         run: |
           set -euo pipefail
           python3 scripts/package_release.py \
-            --tag "$RELEASE_TAG" \
+            --tag "$LNOT_FIRMWARE_VERSION" \
+            --channel alpha \
             --package-directory release-assets \
             --combine
       - name: Upload versioned assets to GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v0.0.0-alpha.${{ github.run_number }}
         run: |
           set -euo pipefail
-          gh release upload "$RELEASE_TAG" release-assets/* \
+          gh release upload "$LNOT_FIRMWARE_VERSION" release-assets/* \
             --repo "$GITHUB_REPOSITORY" --clobber
