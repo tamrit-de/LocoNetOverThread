@@ -18,12 +18,14 @@ from package_release import (  # noqa: E402
 
 
 class ReleasePackageTests(unittest.TestCase):
-    def test_release_channels_are_derived_from_versioned_tags(self) -> None:
-        self.assertEqual(release_channel("v1.2.3"), "stable")
-        self.assertEqual(release_channel("v1.2.3-beta.4"), "beta")
-        self.assertEqual(release_channel("v1.2.3-alpha.2"), "alpha")
+    def test_release_channels_are_independent_of_versioned_tags(self) -> None:
+        self.assertEqual(release_channel("v1.2.251006.1"), "stable")
+        self.assertEqual(release_channel("v1.2.251006.2", "beta"), "beta")
+        self.assertEqual(release_channel("v1.2.251006.3", "alpha"), "alpha")
         with self.assertRaises(DeploymentError):
             release_channel("main")
+        with self.assertRaises(DeploymentError):
+            release_channel("v1.2.251332.1")
 
     def test_packages_every_image_with_flash_address_and_sha256(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -67,11 +69,12 @@ class ReleasePackageTests(unittest.TestCase):
             package = root / "package"
 
             fragment_path = package_application(
-                "client", "v1.2.3", build, package
+                "client", "v1.2.251006.1", build, package
             )
             fragment = json.loads(fragment_path.read_text(encoding="utf-8"))
 
             hardware = fragment["hardware"][0]
+            self.assertEqual(fragment["version"], "v1.2.251006.1")
             self.assertEqual(fragment["channel"], "stable")
             self.assertEqual(hardware["chip"], "ESP32-H2")
             self.assertEqual(hardware["board"], "ESP32-H2-DevKitM-1-N4")
@@ -82,7 +85,7 @@ class ReleasePackageTests(unittest.TestCase):
             for image in hardware["images"]:
                 binary = (package / image["filename"]).read_bytes()
                 self.assertEqual(image["sha256"], hashlib.sha256(binary).hexdigest())
-                self.assertIn("/releases/download/v1.2.3/", image["url"])
+                self.assertIn("/releases/download/v1.2.251006.1/", image["url"])
 
     def test_combines_target_manifests_and_removes_fragments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -91,10 +94,10 @@ class ReleasePackageTests(unittest.TestCase):
                 ("client", "ESP32-H2"),
                 ("border-router", "ESP32-C6"),
             ):
-                (package / f"manifest-v1.0.0-{application}.json").write_text(
+                (package / f"manifest-v1.0.251006.1-{application}.json").write_text(
                     json.dumps(
                         {
-                            "version": "v1.0.0",
+                            "version": "v1.0.251006.1",
                             "channel": "stable",
                             "hardware": [
                                 {"application": application, "chip": chip}
@@ -104,14 +107,16 @@ class ReleasePackageTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            manifest_path = combine_manifests("v1.0.0", package)
+            manifest_path = combine_manifests("v1.0.251006.1", package)
 
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 [entry["chip"] for entry in manifest["hardware"]],
                 ["ESP32-C6", "ESP32-H2"],
             )
-            self.assertEqual(list(package.glob("manifest-v1.0.0-*.json")), [])
+            self.assertEqual(
+                list(package.glob("manifest-v1.0.251006.1-*.json")), []
+            )
 
 
 if __name__ == "__main__":
