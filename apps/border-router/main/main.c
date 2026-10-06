@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "cJSON.h"
+#include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -32,6 +33,9 @@
 #define WIFI_KEY "wifi"
 #define ADMIN_KEY "admin"
 #define WIFI_CONNECT_TIMEOUT_US (30LL * 1000LL * 1000LL)
+#define FACTORY_RESET_BUTTON_GPIO GPIO_NUM_9
+#define FACTORY_RESET_HOLD_US (10LL * 1000LL * 1000LL)
+#define FACTORY_RESET_BUTTON_POLL_MS 100
 #define PASSWORD_SALT_SIZE 16
 #define PASSWORD_HASH_SIZE 32
 #define PASSWORD_ITERATIONS 100000
@@ -154,7 +158,7 @@ static httpd_handle_t s_http_server;
 static esp_netif_t *s_ap_netif;
 static esp_netif_t *s_station_netif;
 static esp_timer_handle_t s_connect_timeout_timer;
-static char s_ap_ssid[24];
+static char s_device_name[24];
 static char s_session_token[65];
 static char s_session_cookie[128];
 static int64_t s_session_last_use_us;
@@ -667,12 +671,38 @@ static void register_uri(const char *uri, httpd_method_t method, esp_err_t (*han
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_http_server, &route));
 }
 
-static void make_ap_ssid(void)
+static void make_device_name(void)
 {
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_EFUSE_FACTORY));
-    if (!lnot_wifi_ap_ssid_from_mac(mac, s_ap_ssid, sizeof(s_ap_ssid))) {
+    if (!lnot_wifi_device_name_from_mac(mac, s_device_name, sizeof(s_device_name))) {
         ESP_ERROR_CHECK(ESP_ERR_INVALID_SIZE);
+    }
+}
+
+static void factory_reset_button_task(void *argument)
+{
+    (void)argument;
+    bool pressed = false;
+    int64_t pressed_at_us = 0;
+
+    for (;;) {
+        bool is_pressed = gpio_get_level(FACTORY_RESET_BUTTON_GPIO) == 0;
+        if (is_pressed && !pressed) {
+            pressed = true;
+            pressed_at_us = esp_timer_get_time();
+        } else if (is_pressed && esp_timer_get_time() - pressed_at_us >= FACTORY_RESET_HOLD_US) {
+            ESP_LOGW(TAG, "BOOT button held for 10 seconds; erasing configuration");
+            esp_err_t err = nvs_flash_erase();
+            if (err == ESP_OK) {
+                esp_restart();
+            }
+            ESP_LOGE(TAG, "Could not erase configuration (%s)", esp_err_to_name(err));
+            pressed = false;
+        } else if (!is_pressed) {
+            pressed = false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(FACTORY_RESET_BUTTON_POLL_MS));
     }
 }
 
@@ -796,7 +826,7 @@ static void print_status(void)
         }
     }
     printf("Mode: %s; WebUI: http://%s/; AP SSID: %s; WiFi credentials: %s; "
-           "administrator password: %s\n", mode, address, s_ap_ssid,
+           "administrator password: %s\n", mode, address, s_device_name,
            s_have_wifi_credentials ? "configured" : "not configured",
            s_admin_password_set ? "configured" : "not configured");
 }
@@ -883,16 +913,25 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(esp_timer_create(&timeout_args, &s_connect_timeout_timer));
 
-    make_ap_ssid();
+    make_device_name();
+    ESP_ERROR_CHECK(esp_netif_set_hostname(s_station_netif, s_device_name));
     wifi_config_t ap = {0};
-    strlcpy((char *)ap.ap.ssid, s_ap_ssid, sizeof(ap.ap.ssid));
-    ap.ap.ssid_len = strlen(s_ap_ssid);
+    strlcpy((char *)ap.ap.ssid, s_device_name, sizeof(ap.ap.ssid));
+    ap.ap.ssid_len = strlen(s_device_name);
     ap.ap.authmode = WIFI_AUTH_OPEN;
     ap.ap.max_connection = 4;
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(start_web_server());
+    const gpio_config_t factory_reset_button_config = {
+        .pin_bit_mask = 1ULL << FACTORY_RESET_BUTTON_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&factory_reset_button_config));
 
     state_lock();
     if (s_have_wifi_credentials) {
@@ -900,5 +939,6 @@ void app_main(void)
     }
     state_unlock();
     xTaskCreate(serial_console_task, "serial_console", 4096, NULL, 5, NULL);
-    ESP_LOGI(TAG, "Border Router ready; AP SSID: %s", s_ap_ssid);
+    xTaskCreate(factory_reset_button_task, "factory_reset_button", 2048, NULL, 5, NULL);
+    ESP_LOGI(TAG, "Border Router ready; device name and AP SSID: %s", s_device_name);
 }
