@@ -57,6 +57,12 @@ function setStatus(message, isError = false) {
 function showBootConsole(output) {
   elements["boot-console"].textContent = output;
   elements["boot-console-container"].hidden = false;
+  elements["boot-console"].scrollTop = elements["boot-console"].scrollHeight;
+}
+
+function appendBootConsole(output) {
+  elements["boot-console"].textContent += output;
+  elements["boot-console"].scrollTop = elements["boot-console"].scrollHeight;
 }
 
 function resetFlasherConnection() {
@@ -436,12 +442,14 @@ async function flashSelectedFirmware() {
   setStatus(
     `Flash complete. Reading boot output for ${bootConsoleDurationMs / 1000} seconds…`,
   );
+  showBootConsole("");
 
   let bootConsole;
   try {
     bootConsole = await captureBootConsole(serialPort, {
       baudRate: bootConsoleBaudRate,
       durationMs: bootConsoleDurationMs,
+      onOutput: appendBootConsole,
     });
   } catch (error) {
     showBootConsole(`Could not read boot output: ${error.message}`);
